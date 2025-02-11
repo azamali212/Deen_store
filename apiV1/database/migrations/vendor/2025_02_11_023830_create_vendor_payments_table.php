@@ -11,13 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('admins', function (Blueprint $table) {
+        Schema::create('vendor_payments', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->unique(); // Foreign key for user_id
-            $table->string('username')->unique(); 
-            $table->string('address'); 
-            $table->string('phone_number');
-            $table->string('profile_picture')->nullable();
+            $table->unsignedBigInteger('vendor_id');
+            $table->decimal('amount', 10, 2);
+            $table->string('transaction_id')->unique();
+            $table->string('payment_method');
+            $table->enum('status', ['pending', 'completed', 'failed'])->default('pending');
             $table->timestamps();
         });
     }
@@ -27,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('admins');
+        Schema::dropIfExists('vendor_payments');
     }
 };

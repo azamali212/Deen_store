@@ -11,13 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('admins', function (Blueprint $table) {
+        Schema::create('carts', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->unique(); // Foreign key for user_id
-            $table->string('username')->unique(); 
-            $table->string('address'); 
-            $table->string('phone_number');
-            $table->string('profile_picture')->nullable();
+            $table->unsignedBigInteger('customer_id');
+            $table->decimal('total_price', 10, 2)->default(0.00);
+            $table->integer('total_quantity')->default(0);
             $table->timestamps();
         });
     }
@@ -27,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('admins');
+        Schema::dropIfExists('carts');
     }
 };

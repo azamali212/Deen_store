@@ -19,6 +19,7 @@ return new class extends Migration
             $table->string('phone_number')->nullable(); // Nullable
             $table->text('address');
             $table->string('city');
+            $table->unsignedBigInteger('store_manager_id');
             $table->string('country');
             $table->string('profile_picture')->nullable(); 
             $table->enum('status', ['active', 'inactive', 'suspended'])->default('active');

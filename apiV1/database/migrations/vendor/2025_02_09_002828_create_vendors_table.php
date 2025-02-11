@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('contact_phone');
             $table->text('address');
             $table->text('business_description');
+            $table->unsignedBigInteger('store_manager_id');
             $table->string('logo')->nullable(); // Vendor logo
             $table->enum('status', ['active', 'inactive', 'suspended'])->default('active'); 
             $table->timestamps();
