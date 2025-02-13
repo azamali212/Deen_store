@@ -27,6 +27,9 @@ class MigrationServiceProvider extends ServiceProvider
             database_path('migrations/wishlist'),
             database_path('migrations/cart'),
             database_path('migrations/shipment'),
+            database_path('migrations/return'),
+            database_path('migrations/gift'),
+            database_path('migrations/email')
         ];
 
         $this->loadMigrationsFrom($paths);

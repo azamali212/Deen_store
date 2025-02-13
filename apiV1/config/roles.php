@@ -3,6 +3,7 @@
 return [
     'Super Admin' => [
         'permissions' => 'all',
+        'guard_name' => 'api',
     ],
 
     'Admin' => [
@@ -22,6 +23,7 @@ return [
             'order-delete',
             'order-restore',
         ],
+        'guard_name' => 'api',
     ],
 
     'Vendor Admin' => [
@@ -41,6 +43,7 @@ return [
             'inventory-edit',
             'inventory-delete',
         ],
+        'guard_name' => 'api',
     ],
 
     'Customer' => [
@@ -52,6 +55,7 @@ return [
             'order-restore',
             'wishlist-create',
         ],
+        'guard_name' => 'api',
     ],
 
     'Delivery Manager' => [
@@ -76,6 +80,7 @@ return [
             'role-delete',
         ],
         'inherits' => ['Product Admin', 'Order Admin'],
+        'guard_name' => 'api',
     ],
 
     'Product Admin' => [
@@ -86,6 +91,7 @@ return [
             'Product-delete',
             'Product-restore',
         ],
+        'guard_name' => 'api',
     ],
 
     'Order Admin' => [
@@ -96,5 +102,6 @@ return [
             'order-delete',
             'order-restore',
         ],
+        'guard_name' => 'api',
     ],
 ];
