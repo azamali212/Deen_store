@@ -6,6 +6,8 @@ use App\Repositories\Auth\AuthRepository;
 use App\Repositories\Auth\AuthRepositoryInterface;
 use App\Repositories\Email\EmailRepository;
 use App\Repositories\Email\EmailRepositoryInterface;
+use App\Repositories\PermissionSettings\Permission\PermissionRepository;
+use App\Repositories\PermissionSettings\Permission\PermissionRepositoryInterface;
 use App\Repositories\PermissionSettings\Role\RoleRepository;
 use App\Repositories\PermissionSettings\Role\RoleRepositoryInterface;
 use App\Repositories\User\UserRepository;
@@ -24,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(EmailRepositoryInterface::class, EmailRepository::class);
         $this->app->bind(UserRepositoryInterface::class,UserRepository::class);
         $this->app->bind(RoleRepositoryInterface::class,RoleRepository::class);
+        $this->app->bind(PermissionRepositoryInterface::class,concrete: PermissionRepository::class);
     }
 
     /**

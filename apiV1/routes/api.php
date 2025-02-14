@@ -10,5 +10,6 @@ Route::get('/user', function (Request $request) {
 Route::prefix('v1')->group(function () {
     require base_path('routes/v1/auth/auth.php');
     require base_path('routes/v1/user/user.php');
-    require base_path('routes/v1/role/role.php');
+    require base_path('routes/v1/permission_settings/role.php');
+    require base_path('routes/v1/permission_settings/permission.php');
 });
