@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class StoreManager extends Model
 {
     protected $fillable = [
+        'user_id',
         'username',
         'status',
         'phone_number',

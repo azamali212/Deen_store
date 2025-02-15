@@ -14,9 +14,9 @@ return new class extends Migration
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->string('name', 255);
-            $table->unsignedBigInteger('product_manager_id')->unique();
-            $table->unsignedBigInteger('store_manager_id')->unique();
-            $table->unsignedBigInteger('vendor_id')->unique();
+            $table->unsignedBigInteger('product_manager_id')->default(1)->nullable();
+            $table->unsignedBigInteger('store_manager_id')->default(1)->nullable();
+            $table->unsignedBigInteger('vendor_id')->default(1)->nullable();
             $table->string('slug', 255)->unique();
             $table->text('description');
             $table->string('sku', 50);
@@ -27,8 +27,8 @@ return new class extends Migration
             $table->string('dimensions', 255)->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_featured')->default(false);
-            $table->unsignedBigInteger('category_id');
-            $table->unsignedBigInteger('brand_id');
+            $table->unsignedBigInteger('category_id')->default(1)->nullable();
+            $table->unsignedBigInteger('brand_id')->default(1)->nullable();
             $table->timestamps();
         });
     }

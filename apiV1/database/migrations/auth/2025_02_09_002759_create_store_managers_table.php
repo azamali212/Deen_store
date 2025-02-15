@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('username')->unique();
             $table->string('phone_number')->nullable();
             $table->string(column: 'profile_picture')->nullable();
-            $table->unsignedBigInteger('user_id')->unique(); // Foreign key to associate store manager with a user
+            $table->string('user_id')->unique(); // Foreign key to associate store manager with a user
             $table->enum('status', ['active', 'inactive', 'suspended'])->default('active'); // Store manager's status
             $table->timestamps();
         });

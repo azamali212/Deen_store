@@ -12,4 +12,5 @@ Route::prefix('v1')->group(function () {
     require base_path('routes/v1/user/user.php');
     require base_path('routes/v1/permission_settings/role.php');
     require base_path('routes/v1/permission_settings/permission.php');
+    require base_path('routes/v1/product_management/product.php');
 });

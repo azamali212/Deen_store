@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class ProductCategorie extends Model
+class ProductCategory extends Model
 {
+    use HasFactory;
     protected $fillable = ['name', 'slug', 'parent_id'];
 
     public function parentCategory()
     {
-        return $this->belongsTo(ProductCategorie::class, 'parent_id');
+        return $this->belongsTo(ProductCategory::class, 'parent_id');
     }
 
     public function subCategories()

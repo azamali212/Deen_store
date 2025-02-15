@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Product extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'name',
         'product_manager_id',
@@ -25,6 +28,20 @@ class Product extends Model
         'brand_id'
     ];
 
+    protected static function booted()
+    {
+        static::creating(function ($product) {
+            // Generate default SKU if not provided
+            if (empty($product->sku)) {
+                $product->sku = 'SKU-' . Str::random(8); // Or any other logic you prefer
+            }
+
+            // Generate slug if not provided
+            if (empty($product->slug)) {
+                $product->slug = Str::slug($product->name);
+            }
+        });
+    }
 
     public function admin()
     {
@@ -46,7 +63,7 @@ class Product extends Model
     }
     public function category()
     {
-        return $this->belongsTo(ProductCategorie::class, 'category_id');
+        return $this->belongsTo(ProductCategory::class, 'category_id');
     }
     public function brand()
     {
@@ -62,7 +79,7 @@ class Product extends Model
     }
     public function tags()
     {
-        return $this->belongsToMany(ProductTagRelation::class, 'product_tag_relations');
+        return $this->belongsToMany(ProductTag::class, 'product_tag_relations', 'product_id', 'tag_id');
     }
     public function orderItems()
     {
@@ -76,4 +93,8 @@ class Product extends Model
     {
         return $this->hasMany(WishlistItem::class);
     }
+    public function subcategory()
+{
+    return $this->belongsTo(SubCategorie::class, 'subcategory_id');
+}
 }

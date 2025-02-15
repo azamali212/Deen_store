@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('vendors', function (Blueprint $table) {
             $table->id(); // Vendor unique ID
-            $table->unsignedBigInteger('user_id')->unique(); 
+            $table->string('user_id')->unique(); 
             $table->string('contact_email')->unique();
             $table->string('contact_phone');
             $table->text('address');
