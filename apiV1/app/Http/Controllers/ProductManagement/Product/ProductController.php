@@ -4,23 +4,31 @@ namespace App\Http\Controllers\ProductManagement\Product;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Product\ProductRequest;
+use App\Models\Product;
+use App\Models\User;
+use App\Models\UserProductView;
 use App\Repositories\ProductManagement\ProductRepo\ProductRepositoryInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use GuzzleHttp\Client;
+
 
 class ProductController extends Controller
 {
     protected $productRepository;
+    protected $client;
 
     public function __construct(ProductRepositoryInterface $productRepository)
     {
         $this->productRepository = $productRepository;
+        $this->client = new Client();
     }
+
     public function index(Request $request): JsonResponse
     {
         $perPage = $request->get('per_page', 10);
         $products = $this->productRepository->getAllProducts($perPage);
-        
+
         return response()->json([
             'success' => true,
             'data' => $products
@@ -29,15 +37,18 @@ class ProductController extends Controller
 
     public function store(ProductRequest $request): JsonResponse
     {
+        \Log::info('Validated Product Data:', $request->validated()); // Log validated data
+
         $product = $this->productRepository->createProduct($request->validated());
+
         return response()->json(['success' => true, 'data' => $product, 'message' => 'Product created successfully'], 201);
     }
 
-    public function show($id): JsonResponse
-{
-    $product = $this->productRepository->getProduct($id);
-    return response()->json(['success' => true, 'data' => $product], 200);
-}
+    public function show(int $id): JsonResponse
+    {
+        $product = $this->productRepository->getProduct($id);
+        return response()->json(['success' => true, 'data' => $product], 200);
+    }
 
     public function update(ProductRequest $request, $id): JsonResponse
     {
@@ -69,4 +80,93 @@ class ProductController extends Controller
         return response()->json(['success' => true, 'data' => $products], 200);
     }
 
+    public function recommendProducts(string $userId): JsonResponse
+    {
+        // Ensure the user exists
+        $recommendedProducts = $this->productRepository->getRecommendedProducts($userId);
+
+        return response()->json([
+            'success' => true,
+            'data' => $recommendedProducts
+        ], 200);
+    }
+
+    public function recommendCategory(string $userId): JsonResponse
+    {
+        // Ensure the user exists
+        $recommendedProducts = $this->productRepository->getRecommendedProducts($userId);
+
+        return response()->json([
+            'success' => true,
+            'data' => $recommendedProducts
+        ], 200);
+    }
+    public function trackProductView(Request $request, $productId)
+    {
+        $userId = $request->user()->id;
+        
+        // Check if the product exists
+        $product = Product::find($productId);
+        if (!$product) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Product not found.',
+            ], 404);
+        }
+    
+        // Log product details for debugging
+        \Log::info('Tracking Product View', [
+            'user_id' => $userId,
+            'product_id' => $productId,
+            'category_id' => $product->category_id
+        ]);
+    
+        // Record the view in the `user_product_views` table
+        UserProductView::create([
+            'user_id' => $userId,
+            'product_id' => $productId,  // Save the specific product ID here
+            'category_id' => $product->category_id,
+        ]);
+    
+        // Return the user ID in the response
+        return response()->json([
+            'success' => true,
+            'message' => 'Product view tracked successfully.',
+            'user_id' => $userId // Include user ID in the response
+        ], 200);
+    }
+
+    public function trackCategoryView(Request $request, $productId)
+    {
+        $userId = $request->user()->id;
+        
+        // Check if the product exists
+        $product = Product::find($productId);
+        if (!$product) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Product not found.',
+            ], 404);
+        }
+    
+        // Log product details for debugging
+        \Log::info('Tracking Category View', [
+            'user_id' => $userId,
+            'category_id' => $product->category_id
+        ]);
+    
+        // Record the view in the `user_product_views` table
+        UserProductView::create([
+            'user_id' => $userId,
+            'category_id' => $product->category_id
+        ]);
+    
+        // Return the user ID in the response
+        return response()->json([
+            'success' => true,
+            'message' => 'Product view tracked successfully.',
+            'user_id' => $userId // Include user ID in the response
+        ], 200);
+    }
+    
 }

@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
+
 class Product extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'name',
         'product_manager_id',
@@ -28,18 +30,11 @@ class Product extends Model
         'brand_id'
     ];
 
+    //SearchAble Array 
     protected static function booted()
     {
         static::creating(function ($product) {
-            // Generate default SKU if not provided
-            if (empty($product->sku)) {
-                $product->sku = 'SKU-' . Str::random(8); // Or any other logic you prefer
-            }
-
-            // Generate slug if not provided
-            if (empty($product->slug)) {
-                $product->slug = Str::slug($product->name);
-            }
+            \Log::info('Creating Event Triggered:', $product->toArray()); // Debugging
         });
     }
 

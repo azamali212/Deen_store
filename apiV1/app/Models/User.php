@@ -14,7 +14,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable ,HasApiTokens,HasRoles;
+    use HasFactory, Notifiable, HasApiTokens, HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -65,13 +65,24 @@ class User extends Authenticatable implements MustVerifyEmail
         });
     }
 
-    public function sendEmailVerificationNotification()
-{
-    $this->notify(new VerifyEmail()); // No need to pass the user object anymore
-}
+    public function viewedCategories()
+    {
+        return $this->belongsToMany(ProductCategory::class, 'user_product_views', 'user_id', 'category_id');
+    }
 
-protected function getVerificationUrl()
-{
-    return url(route('verification.verify', ['token' => $this->email_verification_token], false));  // Ensure URL is built with token
-}
+    public function viewedProducts()
+    {
+        return $this->belongsToMany(Product::class, 'user_product_views', 'user_id', 'product_id');
+    }
+
+
+    public function sendEmailVerificationNotification()
+    {
+        $this->notify(new VerifyEmail()); // No need to pass the user object anymore
+    }
+
+    protected function getVerificationUrl()
+    {
+        return url(route('verification.verify', ['token' => $this->email_verification_token], false));  // Ensure URL is built with token
+    }
 }

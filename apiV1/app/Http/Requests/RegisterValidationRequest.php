@@ -26,7 +26,7 @@ class RegisterValidationRequest extends FormRequest
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
             'confirm_password' => 'required|same:password', // Check if confirm_password matches password
-            'role' => 'nullable|string|in:Admin,Super Admin,Vendor Admin,accountant',
+            'role' => 'nullable|string|in:Admin,Super Admin,Vendor Admin,Customer',
         ];
     }
     
