@@ -18,4 +18,5 @@ interface ProductRepositoryInterface
 
     public function getRecommendedProducts(string $userId);
     public function getRecommendedCategory(string $userId);
+    public function getTrendingProducts();
 }

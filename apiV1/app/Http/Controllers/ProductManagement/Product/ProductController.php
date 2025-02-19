@@ -82,13 +82,23 @@ class ProductController extends Controller
 
     public function recommendProducts(string $userId): JsonResponse
     {
-        // Ensure the user exists
-        $recommendedProducts = $this->productRepository->getRecommendedProducts($userId);
+        try {
+            // Ensure the user exists (you can also add validation here)
+            $recommendedProducts = $this->productRepository->getRecommendedProducts($userId);
+            //dd($this->productRepository->getRecommendedProducts($userId));
 
-        return response()->json([
-            'success' => true,
-            'data' => $recommendedProducts
-        ], 200);
+            // Return the response as is; the repository method will handle empty results and errors.
+            return response()->json([
+                'success' => true,
+                'data' => $recommendedProducts
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Error fetching product recommendations: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch recommendations.',
+            ], 500);
+        }
     }
 
     public function recommendCategory(string $userId): JsonResponse
@@ -104,7 +114,7 @@ class ProductController extends Controller
     public function trackProductView(Request $request, $productId)
     {
         $userId = $request->user()->id;
-        
+
         // Check if the product exists
         $product = Product::find($productId);
         if (!$product) {
@@ -113,21 +123,21 @@ class ProductController extends Controller
                 'message' => 'Product not found.',
             ], 404);
         }
-    
+
         // Log product details for debugging
         \Log::info('Tracking Product View', [
             'user_id' => $userId,
             'product_id' => $productId,
             'category_id' => $product->category_id
         ]);
-    
+
         // Record the view in the `user_product_views` table
         UserProductView::create([
             'user_id' => $userId,
             'product_id' => $productId,  // Save the specific product ID here
             'category_id' => $product->category_id,
         ]);
-    
+
         // Return the user ID in the response
         return response()->json([
             'success' => true,
@@ -139,7 +149,7 @@ class ProductController extends Controller
     public function trackCategoryView(Request $request, $productId)
     {
         $userId = $request->user()->id;
-        
+
         // Check if the product exists
         $product = Product::find($productId);
         if (!$product) {
@@ -148,19 +158,19 @@ class ProductController extends Controller
                 'message' => 'Product not found.',
             ], 404);
         }
-    
+
         // Log product details for debugging
         \Log::info('Tracking Category View', [
             'user_id' => $userId,
             'category_id' => $product->category_id
         ]);
-    
+
         // Record the view in the `user_product_views` table
         UserProductView::create([
             'user_id' => $userId,
             'category_id' => $product->category_id
         ]);
-    
+
         // Return the user ID in the response
         return response()->json([
             'success' => true,
@@ -168,5 +178,4 @@ class ProductController extends Controller
             'user_id' => $userId // Include user ID in the response
         ], 200);
     }
-    
 }
