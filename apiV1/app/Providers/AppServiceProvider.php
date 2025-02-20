@@ -19,6 +19,7 @@ use App\Repositories\User\UserRepositoryInterface;
 use App\Services\AI\Guzzle\AIAuth;
 use App\Services\ProductManagementValidationService;
 use Illuminate\Support\ServiceProvider;
+use Schema;
 
 class AppServiceProvider extends ServiceProvider
 {

@@ -1,5 +1,5 @@
 <?php
-
+//sudo /Applications/XAMPP/xamppfiles/bin/mysql.server start
 namespace App\Repositories\ProductManagement\ProductRepo;
 
 use App\Models\Product;

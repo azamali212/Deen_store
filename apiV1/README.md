@@ -64,3 +64,132 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+
+It looks like MySQL is failing to start due to some existing issues with XAMPP’s MySQL/MariaDB setup. Let’s **fully reset and reinstall XAMPP** properly.
+
+**🚀 Step 1: Completely Remove XAMPP**
+
+To **delete everything** and start fresh, run these commands:
+
+**1️⃣ Stop XAMPP Services**
+
+Run this in **Terminal**:
+
+```
+sudo /Applications/XAMPP/xamppfiles/xampp stop
+```
+
+If the command doesn’t work, stop MySQL manually:
+
+```
+sudo pkill mysqld
+sudo pkill httpd
+```
+
+**2️⃣ Delete XAMPP Completely**
+
+**Run this to ** **delete all XAMPP files** **:**
+
+```
+sudo rm -rf /Applications/XAMPP
+sudo rm -rf ~/.bitnami
+```
+
+**3️⃣ Remove MySQL Data (Optional)**
+
+If you want to remove **all MySQL databases**, delete this folder:
+
+```
+sudo rm -rf /Applications/XAMPP/xamppfiles/var/mysql
+```
+
+**🚀 Step 2: Download and Install XAMPP Again**
+
+**	**1.**	**Go to [**XAMPP Download Page**](https://www.apachefriends.org/download.html).
+
+**	**2.**	**Download the latest **XAMPP for macOS**.
+
+**	**3.**	**Open the **.dmg** file and install it.
+
+**🚀 Step 3: Fix macOS Security Issues**
+
+Since macOS blocks XAMPP, **follow these steps**:
+
+**Allow Installation:**
+
+**	**1.**	****Go to:**System Settings** → **Privacy & Security**.**
+
+**	**2.**	**Scroll down and **click “Allow Anyway”** for XAMPP.
+
+**Bypass macOS Gatekeeper (If needed)**
+
+If installation still fails, run this command:
+
+```
+sudo xattr -d com.apple.quarantine /Applications/XAMPP/xampp-osx-*-installer.dmg
+```
+
+Then, try installing again.
+
+**🚀 Step 4: Start XAMPP Properly**
+
+Once installed, start MySQL **properly**:
+
+```
+sudo /Applications/XAMPP/xamppfiles/xampp start
+```
+
+Check if MySQL is running:
+
+```
+sudo /Applications/XAMPP/xamppfiles/bin/mysql.server status
+```
+
+If MySQL is **not running**, force restart:
+
+```
+sudo /Applications/XAMPP/xamppfiles/xampp restartmysql
+```
+
+**🚀 Step 5: Set MySQL Root Password**
+
+**	**1.**	**Open Terminal and enter MySQL:
+
+```
+sudo /Applications/XAMPP/xamppfiles/bin/mysql -u root
+```
+
+**	**2.**	**Set a  **new password** **:**
+
+```
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'Pakistan@321';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+**🚀 Step 6: Verify MySQL Connection**
+
+Run:
+
+```
+mysql -u root -p
+```
+
+Enter your password (**Pakistan@321**).
+
+If it connects successfully, **XAMPP is fully working!** 🎉
+
+**💥 If Problems Still Happen:**
+
+**	**•**	**Check MySQL logs:
+
+```
+cat /Applications/XAMPP/xamppfiles/var/mysql/*.err
+```
+
+**	**•**	**Restart your Mac.
+
+**	**•**	**Run **brew doctor** to check for Homebrew conflicts.
+
+Let me know if any errors still happen! 🚀
