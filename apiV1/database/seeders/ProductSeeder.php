@@ -13,6 +13,8 @@ class ProductSeeder extends Seeder
      */
     public function run()
     {
-        Product::factory()->count(20)->create(); // Creates 20 sample products
+        Product::factory()->count(10)->create([
+            'limit' => 5, // You can specify different limits for seeding
+        ]); // Creates 20 sample products
     }
 }

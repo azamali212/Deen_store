@@ -12,4 +12,8 @@ class ProductTag extends Model
     {
         return $this->belongsToMany(Product::class, 'product_tag_relations');
     }
+    public function userActivities()
+    {
+        return $this->hasMany(UserActivity::class);
+    }
 }

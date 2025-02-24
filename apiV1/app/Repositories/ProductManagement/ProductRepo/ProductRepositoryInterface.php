@@ -16,7 +16,5 @@ interface ProductRepositoryInterface
     // Sorting and pagination combined into one method
     public function getSortedAndPaginatedProducts(array $filters, string $sortBy, string $sortDirection, int $perPage);
 
-    public function getRecommendedProducts(string $userId);
-    public function getRecommendedCategory(string $userId);
-    public function getTrendingProducts();
+ 
 }

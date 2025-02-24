@@ -26,6 +26,7 @@ return new class extends Migration
             $table->decimal('weight', 10, 2)->nullable();
             $table->string('dimensions', 255)->nullable();
             $table->boolean('is_active')->default(true);
+            $table->integer('limit')->default(0);
             $table->boolean('is_featured')->default(false);
             $table->unsignedBigInteger('category_id')->default(1)->nullable();
             $table->unsignedBigInteger('brand_id')->default(1)->nullable();

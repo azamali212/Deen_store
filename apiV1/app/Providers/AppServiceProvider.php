@@ -10,6 +10,10 @@ use App\Repositories\PermissionSettings\Permission\PermissionRepository;
 use App\Repositories\PermissionSettings\Permission\PermissionRepositoryInterface;
 use App\Repositories\PermissionSettings\Role\RoleRepository;
 use App\Repositories\PermissionSettings\Role\RoleRepositoryInterface;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\AIProductRepository;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\AIProductRepositoryInterface;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\UserActivityRepository;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\UserActivityRepositoryInterface;
 use App\Repositories\ProductManagement\BaseRepo\BaseRepository;
 use App\Repositories\ProductManagement\BaseRepo\BaseRepositoryInterface;
 use App\Repositories\ProductManagement\ProductRepo\ProductRepository;
@@ -46,7 +50,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(\App\Repositories\ProductManagement\VariantRepository::class, \App\Repositories\ProductManagement\VariantRepository::class);
         $this->app->bind(\App\Repositories\ProductManagement\ProductImageRepository::class, \App\Repositories\ProductManagement\ProductImageRepository::class);
         $this->app->bind(\App\Repositories\ProductManagement\TagRepository::class, \App\Repositories\ProductManagement\TagRepository::class);
-
+        $this->app->bind(AIProductRepositoryInterface::class,AIProductRepository::class);
+        $this->app->bind(UserActivityRepositoryInterface::class,UserActivityRepository::class);
         //Validations Services
         $this->app->singleton(ProductManagementValidationService::class, function ($app) {
             return new ProductManagementValidationService();
