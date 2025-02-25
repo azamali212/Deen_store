@@ -12,6 +12,12 @@ use App\Repositories\PermissionSettings\Role\RoleRepository;
 use App\Repositories\PermissionSettings\Role\RoleRepositoryInterface;
 use App\Repositories\ProductManagement\AIFeatureProductRepo\AIProductRepository;
 use App\Repositories\ProductManagement\AIFeatureProductRepo\AIProductRepositoryInterface;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\CartProductRepo\CartAbandonmentRepository;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\CartProductRepo\CartAbandonmentRepositoryInterface;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\CollaborativeFilteringRepo\CollaborativeFilteringRepository;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\CollaborativeFilteringRepo\CollaborativeFilteringRepositoryInterface;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\GeolocationRecommendationRepo\GeolocationRecommendationRepository;
+use App\Repositories\ProductManagement\AIFeatureProductRepo\GeolocationRecommendationRepo\GeolocationRecommendationRepositoryInterface;
 use App\Repositories\ProductManagement\AIFeatureProductRepo\UserActivityRepository;
 use App\Repositories\ProductManagement\AIFeatureProductRepo\UserActivityRepositoryInterface;
 use App\Repositories\ProductManagement\BaseRepo\BaseRepository;
@@ -52,6 +58,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(\App\Repositories\ProductManagement\TagRepository::class, \App\Repositories\ProductManagement\TagRepository::class);
         $this->app->bind(AIProductRepositoryInterface::class,AIProductRepository::class);
         $this->app->bind(UserActivityRepositoryInterface::class,UserActivityRepository::class);
+        $this->app->bind(CartAbandonmentRepositoryInterface::class,CartAbandonmentRepository::class);
+        $this->app->bind(CollaborativeFilteringRepositoryInterface::class,CollaborativeFilteringRepository::class);
+        $this->app->bind(GeolocationRecommendationRepositoryInterface::class,GeolocationRecommendationRepository::class);
+
+        
         //Validations Services
         $this->app->singleton(ProductManagementValidationService::class, function ($app) {
             return new ProductManagementValidationService();

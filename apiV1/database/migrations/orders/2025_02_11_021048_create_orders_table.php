@@ -15,8 +15,10 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('order_manager_id')->unique();
             $table->unsignedBigInteger('store_manager_id')->unique();
-            $table->unsignedBigInteger('customer_id');
-            $table->unsignedBigInteger('vendor_id');
+            $table->unsignedBigInteger('customer_id')->nullable();
+            $table->unsignedBigInteger('product_id')->nullable();
+            $table->unsignedBigInteger('vendor_id')->nullable();
+            $table->foreignUlid('user_id');
             $table->unsignedBigInteger('shipping_zone_id')->nullable();
             $table->string('order_number', 50)->unique();
             $table->decimal('total_amount', 10, 2);

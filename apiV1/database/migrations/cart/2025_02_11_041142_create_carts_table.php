@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('carts', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('customer_id');
+            $table->foreignUlid('user_id');
             $table->decimal('total_price', 10, 2)->default(0.00);
             $table->integer('total_quantity')->default(0);
             $table->timestamps();

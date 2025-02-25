@@ -89,7 +89,11 @@ class Product extends Model
         return $this->hasMany(WishlistItem::class);
     }
     public function subcategory()
-{
-    return $this->belongsTo(SubCategorie::class, 'subcategory_id');
-}
+    {
+        return $this->belongsTo(SubCategorie::class, 'subcategory_id');
+    }
+    public function purchases()
+    {
+        return $this->hasMany(PurchaseOrder::class);
+    }
 }

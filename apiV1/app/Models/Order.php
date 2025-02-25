@@ -17,6 +17,7 @@ class Order extends Model
         'tax_amount',
         'shipping_amount',
         'grand_total',
+        'user_id',
         'payment_status',
         'order_status',
         'tracking_number',
@@ -34,6 +35,10 @@ class Order extends Model
     public function storeManager()
     {
         return $this->belongsTo(StoreManager::class, 'store_manager_id');
+    }
+    public function product()
+    {
+        return $this->belongsTo(Product::class, 'product_id');
     }
 
     public function vendor()

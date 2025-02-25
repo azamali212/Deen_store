@@ -1,5 +1,4 @@
 <?php
-
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
@@ -38,8 +37,8 @@ class VendorSeeder extends Seeder
         // Example of creating vendors with related data like user and store manager
         $vendors = [
             [
-                'user_id' => User::inRandomOrder()->first()->id, // Assumes there's at least one user in the database
-                'contact_email' => 'vendor1@example.com',
+                'user_id' => Str::ulid()->toString(), // Generate a new unique ULID
+                'contact_email' => 'vendor1_' . Str::random(10) . '@example.com', // Ensure unique email
                 'contact_phone' => '1234567890',
                 'address' => '123 Vendor Street, City, Country',
                 'business_description' => 'An amazing vendor selling top products.',
@@ -48,8 +47,8 @@ class VendorSeeder extends Seeder
                 'status' => 'active',
             ],
             [
-                'user_id' => User::inRandomOrder()->first()->id,
-                'contact_email' => 'vendor2@example.com',
+                'user_id' => Str::ulid()->toString(), // Generate a new unique ULID
+                'contact_email' => 'vendor2_' . Str::random(10) . '@example.com', // Ensure unique email
                 'contact_phone' => '0987654321',
                 'address' => '456 Vendor Avenue, City, Country',
                 'business_description' => 'Best quality products available here.',
@@ -57,7 +56,7 @@ class VendorSeeder extends Seeder
                 'logo' => 'vendor2_logo.png',
                 'status' => 'inactive',
             ],
-            // Add more vendors as needed
+            // Add more vendors as needed, ensuring each has a unique email
         ];
 
         foreach ($vendors as $vendorData) {
