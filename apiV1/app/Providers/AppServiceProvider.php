@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Repositories\Auth\AuthRepository;
 use App\Repositories\Auth\AuthRepositoryInterface;
+use App\Repositories\CategoryManagement\ParentCategoryRepo\CategoryRepository;
+use App\Repositories\CategoryManagement\ParentCategoryRepo\CategoryRepositoryInterface;
 use App\Repositories\Email\EmailRepository;
 use App\Repositories\Email\EmailRepositoryInterface;
 use App\Repositories\PermissionSettings\Permission\PermissionRepository;
@@ -61,6 +63,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(CartAbandonmentRepositoryInterface::class,CartAbandonmentRepository::class);
         $this->app->bind(CollaborativeFilteringRepositoryInterface::class,CollaborativeFilteringRepository::class);
         $this->app->bind(GeolocationRecommendationRepositoryInterface::class,GeolocationRecommendationRepository::class);
+        $this->app->bind(CategoryRepositoryInterface::class,CategoryRepository::class);
+
 
         
         //Validations Services

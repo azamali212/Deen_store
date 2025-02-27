@@ -15,7 +15,13 @@ return new class extends Migration
             $table->id();
             $table->string('name', 255);
             $table->string('slug', 255)->unique();
-            $table->unsignedBigInteger('parent_id')->nullable();
+            $table->unsignedBigInteger('product_manager_id')->default(1)->nullable();
+            $table->unsignedBigInteger('store_manager_id')->default(1)->nullable();
+            $table->unsignedBigInteger('parent_id')->nullable()->index(); // Added index for better query performance
+            $table->text('description')->nullable(); // Added for category description
+            $table->string('image')->nullable(); // Added for category image
+            $table->boolean('is_active')->default(true); // Added for category activation status
+            $table->unsignedInteger('position')->default(0); // Added for category sorting order
             $table->timestamps();
         });
     }
