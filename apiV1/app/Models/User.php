@@ -85,4 +85,25 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return url(route('verification.verify', ['token' => $this->email_verification_token], false));  // Ensure URL is built with token
     }
+
+    public function sentEmails()
+    {
+        return $this->hasMany(Email::class, 'sender_id');
+    }
+
+    /**
+     * Get the emails that the user has received.
+     */
+    public function receivedEmails()
+    {
+        return $this->hasMany(Email::class, 'receiver_id');
+    }
+
+    /**
+     * Get the email statuses for the emails the user has received or sent.
+     */
+    public function emailStatuses()
+    {
+        return $this->hasManyThrough(Email_Status::class, Email::class);
+    }
 }

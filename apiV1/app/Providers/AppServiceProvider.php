@@ -40,6 +40,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        if ($this->app->environment('local') && class_exists(\Laravel\Telescope\TelescopeServiceProvider::class)) {
+            $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);  // Keep only this line
+        }
         $this->app->bind(AuthRepositoryInterface::class, AuthRepository::class);
         $this->app->bind(EmailRepositoryInterface::class, EmailRepository::class);
         $this->app->bind(UserRepositoryInterface::class,UserRepository::class);

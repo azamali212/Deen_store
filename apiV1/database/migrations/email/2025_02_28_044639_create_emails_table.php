@@ -11,12 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('email_templates', function (Blueprint $table) {
+        Schema::create('emails', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
-            $table->text('content');
+            $table->foreignUlid('sender_id')->constrained('users')->onDelete('cascade');
+            $table->foreignUlid('receiver_id')->constrained('users')->onDelete('cascade');
+            $table->string('subject');
+            $table->text('body');
             $table->timestamps();
-        });
+        }); 
     }
 
     /**
@@ -24,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('email_templates');
+        Schema::dropIfExists('emails');
     }
 };

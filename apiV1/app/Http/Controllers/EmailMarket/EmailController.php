@@ -1,11 +1,11 @@
 <?php
+
 namespace App\Http\Controllers\EmailMarket;
 
-use App\Http\Controllers\Controller;
-use App\Models\Customer;
-use Illuminate\Http\Request;
+use App\Events\EmailStatusUpdated;
 use App\Repositories\Email\EmailRepositoryInterface;
-use App\Models\User;
+use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
 
 class EmailController extends Controller
 {
@@ -16,48 +16,66 @@ class EmailController extends Controller
         $this->emailRepository = $emailRepository;
     }
 
-    public function sendWelcomeEmail(Request $request)
+    // Send an email
+    public function sendEmail(Request $request)
     {
-        $user = User::findOrFail($request->user_id);
-        $templateName = $request->template_name; // Ensure template_name is sent in the request
-        $this->emailRepository->sendWelcomeEmail($user, $templateName); // Pass the template name
-        return response()->json(['message' => 'Welcome email sent successfully!']);
+        $request->validate([
+            'sender_id' => 'required|exists:users,id',
+            'receiver_id' => 'required|exists:users,id',
+            'subject' => 'required|string|max:255',
+            'body' => 'required|string',
+        ]);
+
+        $email = $this->emailRepository->sendEmail(
+            $request->sender_id,
+            $request->receiver_id,
+            $request->subject,
+            $request->body
+        );
+        event(new EmailStatusUpdated($email->id)); // Fire event with $email
+
+        return response()->json(['email' => $email], 201);
     }
 
-    public function sendPaymentVerificationEmail(Request $request)
+    // Get emails for a specific user
+    public function getUserEmails($userId, $status = 'sent')
     {
-        $user = Customer::findOrFail($request->user_id);
-        $order = $user->orders()->find($request->order_id);
-        $this->emailRepository->sendPaymentVerificationEmail($user, $order);
-        return response()->json(['message' => 'Payment verification email sent successfully!']);
+        $emails = $this->emailRepository->getEmailsForUser($userId, $status);
+        return response()->json(['emails' => $emails], 200);
     }
 
-    public function sendDiscountEmail(Request $request)
+    // Mark an email as read
+    public function markAsRead($emailId)
     {
-        $user = Customer::findOrFail($request->user_id);
-        $this->emailRepository->sendDiscountEmail($user, $request->discount_code);
-        return response()->json(['message' => 'Discount email sent successfully!']);
+        $this->emailRepository->markAsRead($emailId);
+        return response()->json(['message' => 'Email marked as read'], 200);
     }
 
-    // Get email history
-    public function getEmailHistory(Request $request)
+    // Mark an email as unread
+    public function markAsUnread($emailId)
     {
-        $user = User::findOrFail($request->user_id);
-        $emails = $this->emailRepository->getEmailHistory($user);
-        return response()->json($emails);
+        $this->emailRepository->markAsUnread($emailId);
+        return response()->json(['message' => 'Email marked as unread'], 200);
     }
 
-    // Resend an email
-    public function resendEmail(Request $request)
+    // Archive an email
+    public function archiveEmail($emailId)
     {
-        $this->emailRepository->resendEmail($request->email_log_id);
-        return response()->json(['message' => 'Email resent successfully!']);
+        $this->emailRepository->archiveEmail($emailId);
+        return response()->json(['message' => 'Email archived'], 200);
     }
 
-    // Delete an email log
-    public function deleteEmailLog(Request $request)
+    // Unarchive an email
+    public function unarchiveEmail($emailId)
     {
-        $this->emailRepository->deleteEmailLog($request->email_log_id);
-        return response()->json(['message' => 'Email log deleted successfully!']);
+        $this->emailRepository->unarchiveEmail($emailId);
+        return response()->json(['message' => 'Email unarchived'], 200);
+    }
+
+    // Delete an email
+    public function deleteEmail($emailId)
+    {
+        $this->emailRepository->deleteEmail($emailId);
+        return response()->json(['message' => 'Email deleted'], 200);
     }
 }

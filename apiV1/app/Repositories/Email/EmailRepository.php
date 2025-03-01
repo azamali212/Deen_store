@@ -2,90 +2,198 @@
 
 namespace App\Repositories\Email;
 
-use App\Models\EmailTemplate;
-use App\Mail\BaseMail;
-use Illuminate\Support\Facades\Mail;
-use App\Models\EmailLog; // Optional: If storing logs
-use App\Models\User;
-use Illuminate\Support\Facades\Log;
+use App\Events\EmailStatusUpdated;
+use App\Models\Email;
+use App\Models\Email_Status;
+use Illuminate\Database\Eloquent\Collection;
 
 class EmailRepository implements EmailRepositoryInterface
 {
-    public function sendEmail($user, $templateName, $data = [])
+
+    /**
+     * Send a new email.
+     *
+     * @param int $senderId
+     * @param int $receiverId
+     * @param string $subject
+     * @param string $body
+     * @return Email
+     */
+
+     public function sendEmail(string $senderId, string $receiverId, string $subject, string $body): Email
+     {
+         // Create the email
+         $email = Email::create([
+             'sender_id' => $senderId,
+             'receiver_id' => $receiverId,
+             'subject' => $subject,
+             'body' => $body,
+         ]);
+     
+         if (!$email) {
+             throw new \Exception("Failed to create email.");
+         }
+     
+         // Create the status for the email
+         Email_Status::create([
+             'email_id' => $email->id,
+             'status' => 'sent',
+             'read_status' => 'unread',
+             'archive_status' => 'unarchived',
+         ]);
+     
+         return $email;
+     }
+
+    /**
+     * Get all emails for a user based on status (sent or received).
+     *
+     * @param int $userId
+     * @param string $status
+     * @return Collection
+     */
+    public function getEmailsForUser(int $userId, string $status = 'sent'): Collection
     {
-        try {
-            $template = EmailTemplate::getTemplateByName($templateName);
-
-            if (!$template) {
-                throw new \Exception("Email template not found: " . $templateName);
-            }
-
-            Mail::to($user->email)->send(new BaseMail($user, $template, $data));
-
-            // Optional: Store email log
-            EmailLog::create([
-                'user_id' => $user->id,
-                'email' => $user->email,
-                'template_name' => $templateName,
-                'sent_at' => now(),
-            ]);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error("Error sending email: " . $e->getMessage());
+        // Query based on whether the user is the sender or receiver
+        if ($status === 'sent') {
+            return Email::where('sender_id', $userId)->get();
+        } elseif ($status === 'received') {
+            return Email::where('receiver_id', $userId)->get();
         }
+
+        // Default to sent emails
+        return Email::where('sender_id', $userId)->get();
     }
 
-    public function sendWelcomeEmail($user, $templateName)
+    /**
+     * Get a single email by its ID.
+     *
+     * @param int $emailId
+     * @return Email|null
+     */
+
+    public function getEmailById(int $emailId): ?Email
     {
-        try {
-            // Check if the template is being fetched correctly
-            $template = EmailTemplate::getTemplateByName($templateName);
-    
-            if (!$template) {
-                throw new \Exception("Email template not found: " . $templateName);
+        // Find the email by its ID
+        return Email::find($emailId);
+    }
+
+    /**
+     * Mark an email as read.
+     *
+     * @param int $emailId
+     * @return bool
+     */
+    public function markAsRead(int $emailId): bool
+    {
+        $emailStatus = Email_Status::where('email_id', $emailId)->first();
+        
+        if ($emailStatus) {
+            $email = $emailStatus->email; // Ensure the email relation exists
+            if (!$email) {
+                \Log::error("Email record not found for Email_Status ID: {$emailStatus->id}");
+                return false;
             }
-    
-            // Log the template name for debugging purposes
-            Log::info('Sending welcome email to: ' . $user->email . ' using template: ' . $templateName);
-    
-            // Send the welcome email
-            Mail::to($user->email)->send(new BaseMail($user, $template, []));
-            
-            Log::info('Welcome email sent to: ' . $user->email);
-        } catch (\Exception $e) {
-            // Log the error
-            Log::error('Error sending welcome email: ' . $e->getMessage());
+        
+            // Update read status
+            $emailStatus->update(['read_status' => 'read']);
+            return true;
         }
+        
+        \Log::error("Email_Status not found for emailId: {$emailId}");
+        return false;
     }
 
-    public function sendPaymentVerificationEmail($user, $order)
+    /**
+     * Mark an email as unread.
+     *
+     * @param int $emailId
+     * @return bool
+     */
+
+    public function markAsUnread(int $emailId): bool
     {
-        $this->sendEmail($user, 'payment_verification_email', ['order' => $order]);
+        $emailStatus = Email_Status::where('email_id', $emailId)->first();
+
+        if ($emailStatus) {
+            $emailStatus->update(['read_status' => 'unread']);
+            return true;
+        }
+
+        return false;
     }
 
-    public function sendDiscountEmail($user, $discountCode)
+    /**
+     * Archive an email.
+     *
+     * @param int $emailId
+     * @return bool
+     */
+    public function archiveEmail(int $emailId): bool
     {
-        $this->sendEmail($user, 'discount_email', ['discount_code' => $discountCode]);
+        $emailStatus = Email_Status::where('email_id', $emailId)->first();
+
+        if ($emailStatus) {
+            $emailStatus->update(['archive_status' => 'archived']);
+            return true;
+        }
+
+        return false;
     }
 
-    // Retrieve sent emails (if storing logs)
-    public function getEmailHistory($user)
+    /**
+     * Unarchive an email.
+     *
+     * @param int $emailId
+     * @return bool
+     */
+    public function unarchiveEmail(int $emailId): bool
     {
-        return EmailLog::where('user_id', $user->id)->orderBy('sent_at', 'desc')->get();
+        $emailStatus = Email_Status::where('email_id', $emailId)->first();
+
+        if ($emailStatus) {
+            $emailStatus->update(['archive_status' => 'unarchived']);
+            return true;
+        }
+
+        return false;
     }
 
-    // Resend an email (if storing logs)
-    public function resendEmail($emailLogId)
+    /**
+     * Delete an email and its status.
+     *
+     * @param int $emailId
+     * @return bool
+     */
+    public function deleteEmail(int $emailId): bool
     {
-        $emailLog = EmailLog::findOrFail($emailLogId);
-        $user = User::findOrFail($emailLog->user_id);
+        // Delete the email status first
+        $emailStatus = Email_Status::where('email_id', $emailId)->first();
+        if ($emailStatus) {
+            $emailStatus->delete();
+        }
 
-        $this->sendEmail($user, $emailLog->template_name, []);
+        // Now delete the email
+        $email = Email::find($emailId);
+        if ($email) {
+            $email->delete();
+            return true;
+        }
+
+        return false;
     }
 
-    // Delete an email record (Optional)
-    public function deleteEmailLog($emailLogId)
+    /**
+     * Get all email statuses for a user (both sent and received emails).
+     *
+     * @param int $userId
+     * @return Collection
+     */
+    public function getEmailStatusesForUser(int $userId): Collection
     {
-        return EmailLog::where('id', $emailLogId)->delete();
+        return Email_Status::whereHas('email', function ($query) use ($userId) {
+            $query->where('sender_id', $userId)
+                ->orWhere('receiver_id', $userId);
+        })->get();
     }
 }
