@@ -3,19 +3,27 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Email extends Model
 {
     
-    use HasFactory;
+    use HasFactory,SoftDeletes;
 
     protected $fillable = [
-        'subject',
-        'body',
         'sender_id',
         'receiver_id',
+        'from_email',
+        'to_email',
+        'subject',
+        'body',
     ];
+    protected $dates = ['deleted_at'];
 
+    public function isTrashed(): bool
+    {
+        return $this->trashed();
+    }
     /**
      * Get the sender associated with the email.
      */

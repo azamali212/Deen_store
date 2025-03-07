@@ -2,6 +2,9 @@
 //sudo /Applications/XAMPP/xamppfiles/bin/mysql.server start
 namespace App\Repositories\ProductManagement\ProductRepo;
 
+use App\Events\ProductCreated;
+use App\Events\ProductDeleted;
+use App\Events\ProductUpdated;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\UserProductView;
@@ -42,6 +45,7 @@ class ProductRepository implements ProductRepositoryInterface
         }
 
         \Log::info('Product Created:', $product->toArray()); // Log the created product
+        event(new ProductCreated($product, 'created'));
 
         return $product;
     }
@@ -51,13 +55,22 @@ class ProductRepository implements ProductRepositoryInterface
     {
         $product = Product::findOrFail($id);
         $product->update($data);
+        event(new ProductUpdated($product, 'created'));
         return $product;
     }
 
     // Delete a product
     public function deleteProduct(int $id)
     {
-        return Product::destroy($id);
+        $product = Product::findOrFail($id);  // Get the product instance first
+    
+        // Delete the product
+        $product->delete();
+    
+        // Trigger the ProductDeleted event with the product instance
+        event(new ProductDeleted($product, 'deleted'));
+    
+        return $product;
     }
 
     // Filter products based on various criteria

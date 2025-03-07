@@ -2,67 +2,78 @@
 
 namespace App\Repositories\Email;
 
+use App\Events\EmailDeleted;
 use App\Events\EmailStatusUpdated;
 use App\Models\Email;
 use App\Models\Email_Status;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+
 
 class EmailRepository implements EmailRepositoryInterface
 {
-
     /**
      * Send a new email.
      *
-     * @param int $senderId
-     * @param int $receiverId
+     * @param string $senderId
+     * @param string $receiverId
      * @param string $subject
      * @param string $body
      * @return Email
      */
+    public function sendEmail(string $senderId, string $receiverId, string $subject, string $body): Email
+    {
+        // Fetch sender and receiver emails
+        $sender = User::findOrFail($senderId);
+        $receiver = User::findOrFail($receiverId);
 
-     public function sendEmail(string $senderId, string $receiverId, string $subject, string $body): Email
-     {
-         // Create the email
-         $email = Email::create([
-             'sender_id' => $senderId,
-             'receiver_id' => $receiverId,
-             'subject' => $subject,
-             'body' => $body,
-         ]);
-     
-         if (!$email) {
-             throw new \Exception("Failed to create email.");
-         }
-     
-         // Create the status for the email
-         Email_Status::create([
-             'email_id' => $email->id,
-             'status' => 'sent',
-             'read_status' => 'unread',
-             'archive_status' => 'unarchived',
-         ]);
-     
-         return $email;
-     }
+
+
+        // Create the email record
+        $email = Email::create([
+            'sender_id' => $senderId,
+            'receiver_id' => $receiverId,
+            'from_email' => $sender->email,  // Store sender's email
+            'to_email' => $receiver->email,  // Store receiver's email
+            'subject' => $subject,
+            'body' => $body,
+        ]);
+
+        \Log::debug('Sender email: ' . $sender->email);
+        \Log::debug('Receiver email: ' . $receiver->email);
+        if (!$email) {
+            throw new \Exception("Failed to create email.");
+        }
+
+        // Create the email status record
+        Email_Status::create([
+            'email_id' => $email->id,
+            'status' => 'sent',
+            'read_status' => 'unread',
+            'archive_status' => 'unarchived',
+        ]);
+
+        return $email;
+    }
 
     /**
      * Get all emails for a user based on status (sent or received).
      *
-     * @param int $userId
+     * @param string $userId
      * @param string $status
      * @return Collection
      */
-    public function getEmailsForUser(int $userId, string $status = 'sent'): Collection
+    public function getEmailsForUser(string $userId, string $status = 'sent'): Collection
     {
-        // Query based on whether the user is the sender or receiver
         if ($status === 'sent') {
             return Email::where('sender_id', $userId)->get();
         } elseif ($status === 'received') {
             return Email::where('receiver_id', $userId)->get();
         }
 
-        // Default to sent emails
-        return Email::where('sender_id', $userId)->get();
+        return Email::where('sender_id', $userId)
+            ->orWhere('receiver_id', $userId)
+            ->get();
     }
 
     /**
@@ -71,11 +82,22 @@ class EmailRepository implements EmailRepositoryInterface
      * @param int $emailId
      * @return Email|null
      */
-
     public function getEmailById(int $emailId): ?Email
     {
-        // Find the email by its ID
         return Email::find($emailId);
+    }
+
+    /**
+     * Find emails by sender or receiver email.
+     *
+     * @param string $email
+     * @return Collection
+     */
+    public function findEmailsByEmail(string $email): Collection
+    {
+        return Email::where('from_email', $email)
+            ->orWhere('to_email', $email)
+            ->get();
     }
 
     /**
@@ -87,20 +109,12 @@ class EmailRepository implements EmailRepositoryInterface
     public function markAsRead(int $emailId): bool
     {
         $emailStatus = Email_Status::where('email_id', $emailId)->first();
-        
+
         if ($emailStatus) {
-            $email = $emailStatus->email; // Ensure the email relation exists
-            if (!$email) {
-                \Log::error("Email record not found for Email_Status ID: {$emailStatus->id}");
-                return false;
-            }
-        
-            // Update read status
             $emailStatus->update(['read_status' => 'read']);
             return true;
         }
-        
-        \Log::error("Email_Status not found for emailId: {$emailId}");
+
         return false;
     }
 
@@ -110,7 +124,6 @@ class EmailRepository implements EmailRepositoryInterface
      * @param int $emailId
      * @return bool
      */
-
     public function markAsUnread(int $emailId): bool
     {
         $emailStatus = Email_Status::where('email_id', $emailId)->first();
@@ -165,15 +178,63 @@ class EmailRepository implements EmailRepositoryInterface
      * @param int $emailId
      * @return bool
      */
+    public function moveToTrash(int $emailId): bool
+    {
+        $email = Email::find($emailId);
+
+        if ($email) {
+            $email->delete();
+            event(new EmailDeleted($email)); // Fire event
+            return true;
+        }
+
+        return false;
+    }
+
+    public function restoreEmail(int $emailId): bool
+    {
+        $email = Email::onlyTrashed()->find($emailId);
+
+        if ($email) {
+            $email->restore();
+            return true;
+        }
+
+        return false;
+    }
+    public function emptyTrash(int $emailId): bool
+    {
+        $email = Email::onlyTrashed()->find($emailId);
+
+        if ($email) {
+            $email->forceDelete();
+            return true;
+        }
+
+        return false;
+    }
+
+    public function getTrashedEmails(string $userId): Collection
+    {
+        \Log::debug('Fetching trashed emails for user: ' . $userId); // Log user ID
+    
+        $trashedEmails = Email::onlyTrashed()
+            ->where('sender_id', $userId)
+            ->orWhere('receiver_id', $userId)
+            ->get();
+    
+        \Log::debug('Found trashed emails: ' . $trashedEmails->count()); // Log count of trashed emails
+    
+        return $trashedEmails;
+    }
+
     public function deleteEmail(int $emailId): bool
     {
-        // Delete the email status first
         $emailStatus = Email_Status::where('email_id', $emailId)->first();
         if ($emailStatus) {
             $emailStatus->delete();
         }
 
-        // Now delete the email
         $email = Email::find($emailId);
         if ($email) {
             $email->delete();
@@ -184,7 +245,7 @@ class EmailRepository implements EmailRepositoryInterface
     }
 
     /**
-     * Get all email statuses for a user (both sent and received emails).
+     * Get all email statuses for a user.
      *
      * @param int $userId
      * @return Collection

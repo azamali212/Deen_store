@@ -16,9 +16,14 @@ class EmailFactory extends Factory
 
     public function definition(): array
     {
+        $sender = User::factory()->create();
+        $receiver = User::factory()->create();
+
         return [
-            'sender_id' => User::factory()->create()->id, // Get the actual user ID
-        'receiver_id' => User::factory()->create()->id,
+            'sender_id' => $sender->id,
+            'receiver_id' => $receiver->id,
+            'from_email' => $sender->email, // Store sender's email
+            'to_email' => $receiver->email, // Store receiver's email
             'subject' => $this->faker->sentence(6),
             'body' => $this->faker->paragraph(3),
         ];

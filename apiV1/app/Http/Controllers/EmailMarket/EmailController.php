@@ -6,6 +6,9 @@ use App\Events\EmailStatusUpdated;
 use App\Repositories\Email\EmailRepositoryInterface;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 
 class EmailController extends Controller
 {
@@ -14,6 +17,7 @@ class EmailController extends Controller
     public function __construct(EmailRepositoryInterface $emailRepository)
     {
         $this->emailRepository = $emailRepository;
+        //$this->middleware('auth');
     }
 
     // Send an email
@@ -38,11 +42,12 @@ class EmailController extends Controller
     }
 
     // Get emails for a specific user
-    public function getUserEmails($userId, $status = 'sent')
+    public function getEmailsForUser(string $userId, string $status = 'sent'): JsonResponse
     {
         $emails = $this->emailRepository->getEmailsForUser($userId, $status);
         return response()->json(['emails' => $emails], 200);
     }
+
 
     // Mark an email as read
     public function markAsRead($emailId)
@@ -77,5 +82,42 @@ class EmailController extends Controller
     {
         $this->emailRepository->deleteEmail($emailId);
         return response()->json(['message' => 'Email deleted'], 200);
+    }
+    public function moveToTrash($id)
+    {
+        return response()->json([
+            'success' => $this->emailRepository->moveToTrash($id),
+            'message' => 'Email moved to Trash',
+        ]);
+    }
+
+    public function restoreEmail($id)
+    {
+        return response()->json([
+            'success' => $this->emailRepository->restoreEmail($id),
+            'message' => 'Email restored successfully',
+        ]);
+    }
+
+    public function emptyTrash($id)
+    {
+        return response()->json([
+            'success' => $this->emailRepository->emptyTrash($id),
+            'message' => 'Email permanently deleted',
+        ]);
+    }
+
+    public function getTrashedEmails($userId)
+    {
+        $trashedEmails = $this->emailRepository->getTrashedEmails($userId);
+
+        // If no trashed emails are found, return a message
+        if ($trashedEmails->isEmpty()) {
+            return response()->json(['message' => 'No trashed emails found.'], 404);
+        }
+
+        return response()->json([
+            'emails' => $trashedEmails
+        ], 200);
     }
 }

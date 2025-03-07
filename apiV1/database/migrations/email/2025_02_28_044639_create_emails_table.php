@@ -15,8 +15,13 @@ return new class extends Migration
             $table->id();
             $table->foreignUlid('sender_id')->constrained('users')->onDelete('cascade');
             $table->foreignUlid('receiver_id')->constrained('users')->onDelete('cascade');
+            $table->string('from_email')->nullable()->index(); // Sender email address
+            $table->string('to_email')->nullable()->index();   // Receiver email address
             $table->string('subject');
             $table->text('body');
+            $table->string('draft_status')->default('draft');
+            $table->timestamp('trashed_at')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         }); 
     }
