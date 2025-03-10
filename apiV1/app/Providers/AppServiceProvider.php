@@ -4,8 +4,12 @@ namespace App\Providers;
 
 use App\Repositories\Auth\AuthRepository;
 use App\Repositories\Auth\AuthRepositoryInterface;
+use App\Repositories\Cart\CartRepository;
+use App\Repositories\Cart\CartRepositoryInterface;
 use App\Repositories\CategoryManagement\ParentCategoryRepo\CategoryRepository;
 use App\Repositories\CategoryManagement\ParentCategoryRepo\CategoryRepositoryInterface;
+use App\Repositories\Coupons\CouponsRepository;
+use App\Repositories\Coupons\CouponsRepositoryInterface;
 use App\Repositories\Email\EmailDraftsRepository;
 use App\Repositories\Email\EmailDraftsRepositoryInterface;
 use App\Repositories\Email\EmailRepository;
@@ -70,6 +74,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(GeolocationRecommendationRepositoryInterface::class,GeolocationRecommendationRepository::class);
         $this->app->bind(CategoryRepositoryInterface::class,CategoryRepository::class);
         $this->app->bind(EmailDraftsRepositoryInterface::class,EmailDraftsRepository::class);
+        $this->app->bind(CartRepositoryInterface::class,CartRepository::class);
+        $this->app->bind(CouponsRepositoryInterface::class,CouponsRepository::class);
 
 
         

@@ -22,6 +22,8 @@ return new class extends Migration
             $table->integer('used_count')->default(0);
             $table->timestamp('expires_at')->nullable();
             $table->boolean('is_active')->default(true);
+            $table->foreignUlid('user_id')->nullable();
+            $table->foreignId('group_id')->nullable();
             $table->timestamps();
         });
     }

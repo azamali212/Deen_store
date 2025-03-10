@@ -13,13 +13,14 @@ return new class extends Migration
     {
         Schema::create('cart_items', function (Blueprint $table) {
             $table->id();
-            $table->foreignUlid('cart_id');
+            $table->foreignId('cart_id')->constrained()->cascadeOnDelete();
             $table->unsignedBigInteger('product_id');
             $table->unsignedBigInteger('variant_id')->nullable();
             $table->integer('quantity')->default(1);
-            $table->decimal('price', 10, 2);
-            $table->decimal('discount_price', 10, 2)->nullable();
-            $table->decimal('total_price', 10, 2);
+            $table->decimal('price', 10, 2); // Price per unit
+            $table->decimal('discount_price', 10, 2)->nullable(); // Item-level discount
+            $table->decimal('total_price', 10, 2)->virtualAs('quantity * price'); // Auto-calculate
+            $table->json('attributes')->nullable(); // Store additional data (color, size)
             $table->timestamps();
         });
     }

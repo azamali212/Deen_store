@@ -8,6 +8,7 @@ use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 class CartSeeder extends Seeder
 {
@@ -17,11 +18,13 @@ class CartSeeder extends Seeder
         $users = User::inRandomOrder()->take(5)->get(); // Get 5 random users
 
         foreach ($users as $user) {
-            // Create a cart for each user
+            // Create a cart for each user with a unique cart_token and random status
             $cart = Cart::create([
                 'user_id' => $user->id,
                 'total_price' => 0, // Will be updated
                 'total_quantity' => 0, // Will be updated
+                'cart_token' => Str::uuid(), // Unique cart token
+                'status' => collect(['active', 'abandoned', 'checked_out'])->random(), // Set random status
             ]);
 
             $totalPrice = 0;
@@ -47,7 +50,6 @@ class CartSeeder extends Seeder
                     'quantity' => $quantity,
                     'price' => $price,
                     'discount_price' => $discountPrice,
-                    'total_price' => $discountPrice * $quantity,
                 ]);
 
                 // Update cart totals

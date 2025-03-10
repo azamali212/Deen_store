@@ -34,5 +34,6 @@ class DatabaseSeeder extends Seeder
         $this->call(ProductCategorySeeder::class);
         $this->call(CartSeeder::class);
         $this->call(OrderSeeder::class);
+        $this->call([CouponSeeder::class]);
     }
 }
