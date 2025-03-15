@@ -31,6 +31,8 @@ return new class extends Migration
             $table->string('tracking_number', 100)->nullable();
             $table->text('shipping_address');
             $table->text('billing_address');
+            $table->string('order_placement')->nullable();
+            $table->date('order_date')->nullable();
             $table->timestamps();
         });
     }

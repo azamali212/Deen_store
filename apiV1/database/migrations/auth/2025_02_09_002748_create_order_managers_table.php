@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('order_managers', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id')->unique();
+            $table->foreignUlid('user_id');
             $table->string('username')->unique(); 
             $table->string('phone_number')->nullable(); // Contact number
             $table->enum('status', ['active', 'inactive', 'suspended'])->default('active'); // Manager's status

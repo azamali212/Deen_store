@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'order_manager_id',
         'store_manager_id',
@@ -53,5 +55,9 @@ class Order extends Model
     public function orderManager()
     {
         return $this->belongsTo(OrderManager::class, 'order_manager_id');
+    }
+    public function shippingZone()
+    {
+        return $this->belongsTo(ShippingZone::class, 'shipping_zone_id');
     }
 }

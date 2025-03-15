@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('customers', function (Blueprint $table) {
             $table->id(); // Auto-incrementing ID
-            $table->unsignedBigInteger('user_id')->unique(); // Foreign key to the users table
+            $table->foreignUlid('user_id'); // Foreign key to the users table
             $table->string('username')->unique();
             $table->string('post_code')->nullable(); 
             $table->string('phone_number')->nullable(); // Nullable

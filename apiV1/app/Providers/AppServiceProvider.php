@@ -14,6 +14,8 @@ use App\Repositories\Email\EmailDraftsRepository;
 use App\Repositories\Email\EmailDraftsRepositoryInterface;
 use App\Repositories\Email\EmailRepository;
 use App\Repositories\Email\EmailRepositoryInterface;
+use App\Repositories\Order\OrderRepository;
+use App\Repositories\Order\OrderRepositoryInterface;
 use App\Repositories\PermissionSettings\Permission\PermissionRepository;
 use App\Repositories\PermissionSettings\Permission\PermissionRepositoryInterface;
 use App\Repositories\PermissionSettings\Role\RoleRepository;
@@ -76,6 +78,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(EmailDraftsRepositoryInterface::class,EmailDraftsRepository::class);
         $this->app->bind(CartRepositoryInterface::class,CartRepository::class);
         $this->app->bind(CouponsRepositoryInterface::class,CouponsRepository::class);
+        $this->app->bind(OrderRepositoryInterface::class, OrderRepository::class);
 
 
         
