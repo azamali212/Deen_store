@@ -13,26 +13,29 @@ return new class extends Migration
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('order_manager_id')->unique();
-            $table->unsignedBigInteger('store_manager_id')->unique();
+            $table->unsignedBigInteger('order_manager_id')->unique()->nullable();
+            $table->unsignedBigInteger('store_manager_id')->unique()->nullable();
             $table->unsignedBigInteger('customer_id')->nullable();
             $table->unsignedBigInteger('product_id')->nullable();
             $table->unsignedBigInteger('vendor_id')->nullable();
-            $table->foreignUlid('user_id');
-            $table->unsignedBigInteger('shipping_zone_id')->nullable();
+            $table->foreignUlid('user_id')->nullable();
+            $table->foreignId('shipping_zone_id')->nullable();
             $table->string('order_number', 50)->unique();
-            $table->decimal('total_amount', 10, 2);
-            $table->decimal('discount_amount', 10, 2)->default(0.00);
+            $table->decimal('subtotal', 10, 2)->nullable();
+            $table->decimal('discount', 10, 2)->default(0.00);
             $table->decimal('tax_amount', 10, 2)->default(0.00);
             $table->decimal('shipping_amount', 10, 2)->default(0.00);
             $table->decimal('grand_total', 10, 2);
-            $table->enum('payment_status', ['pending', 'paid', 'failed', 'refunded']);
-            $table->enum('order_status', ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded']);
-            $table->string('tracking_number', 100)->nullable();
+            $table->enum('payment_status', ['pending', 'paid', 'failed', 'refunded'])->default('pending');
+            $table->enum('order_status', ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded', 'escalated'])->default('pending');
+            $table->string('tracking_number')->nullable();
             $table->text('shipping_address');
             $table->text('billing_address');
-            $table->string('order_placement')->nullable();
-            $table->date('order_date')->nullable();
+            $table->timestamp('delayed_at')->nullable();
+            $table->boolean('is_fraudulent')->default(false);
+            $table->timestamp('escalated_at')->nullable();
+            $table->string('escalation_status')->nullable();
+            $table->timestamp('order_date')->useCurrent();
             $table->timestamps();
         });
     }

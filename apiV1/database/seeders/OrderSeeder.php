@@ -20,10 +20,10 @@ class OrderSeeder extends Seeder
         for ($i = 0; $i < 10; $i++) {
             // Calculate grand total manually
             $totalAmount = $faker->randomFloat(2, 100, 1000);
-            $discountAmount = $faker->randomFloat(2, 0, 100);
+            $discount = $faker->randomFloat(2, 0, 100);
             $taxAmount = $faker->randomFloat(2, 5, 50);
             $shippingAmount = $faker->randomFloat(2, 5, 20);
-            $grandTotal = $totalAmount - $discountAmount + $taxAmount + $shippingAmount;
+            $grandTotal = $totalAmount - $discount + $taxAmount + $shippingAmount;
 
             DB::table('orders')->insert([
                 'order_manager_id' => $faker->unique()->randomNumber(),
@@ -34,8 +34,7 @@ class OrderSeeder extends Seeder
                 'user_id' => \Illuminate\Support\Str::ulid(), // Assuming you have a UUID field for user_id
                 'shipping_zone_id' => $faker->randomElement([null, $faker->randomNumber()]),
                 'order_number' => $faker->unique()->regexify('[A-Z]{5}[0-9]{5}'),
-                'total_amount' => $totalAmount,
-                'discount_amount' => $discountAmount,
+                'discount' => $discount,
                 'tax_amount' => $taxAmount,
                 'shipping_amount' => $shippingAmount,
                 'grand_total' => $grandTotal,

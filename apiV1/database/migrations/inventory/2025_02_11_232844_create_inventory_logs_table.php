@@ -17,6 +17,7 @@ return new class extends Migration
             $table->enum('type', ['restock', 'sale', 'return', 'adjustment']);
             $table->integer('quantity');
             $table->text('description')->nullable();
+            $table->string('order_reference')->nullable(); 
             $table->timestamps();
         });
     }

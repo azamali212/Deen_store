@@ -2,220 +2,284 @@
 
 namespace App\Repositories\Order;
 
+use App\Events\OrderActionEvent;
 use App\Models\Order;
 use App\Models\OrderItem;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class OrderRepository implements OrderRepositoryInterface
 {
-    public function all(int $perPage = 15): LengthAwarePaginator
+
+    const ESCALATION_PERIOD = 5;
+    public function getAllOrders(): LengthAwarePaginator
     {
-        return Order::paginate($perPage);
+        return Order::with(['orderItems', 'customer'])->paginate(15);
     }
 
-    // Find order by ID with caching for performance
-    public function show(int $id)
+    public function getOrderById(int $id): ?Order
     {
-        $order = Order::findOrFail($id);
-        return $order;
+        return Order::with(['orderItems', 'customer'])->find($id);
     }
 
-    public function create(array $data): Order
+    public function updateOrder(int $orderId, array $data): bool
     {
-        return Order::create($data);
+        return Order::findOrFail($orderId)->update($data);
     }
 
-    // Update order details
-    public function update(array $data, int $id): ?Order
+    public function deleteOrder(int $orderId): bool
     {
-        $order = $this->find($id);
-        if ($order) {
-            $order->update($data);
-            return $order; // Return the updated order object
-        }
-        return null; // Return null if the order is not found
+        return Order::findOrFail($orderId)->delete();
     }
 
-    // Delete an order by ID
-    public function delete(int $id): bool
+    public function addOrderItems(int $orderId, array $items): bool
     {
-        $order = $this->find($id);
-        if ($order) {
-            return $order->delete();
-        }
-        return false;
+        $order = Order::findOrFail($orderId);
+        return $order->orderItems()->createMany($items) ? true : false;
     }
-    public function getOrdersByFilters(array $filters): Collection
-    {
-        // Start a query on the Order model
-        $query = Order::query();
 
-        // Loop through the filters and apply them to the query dynamically
-        foreach ($filters as $key => $value) {
-            if (!empty($value)) {
-                // If the column exists in the database, apply the filter
-                if (Schema::hasColumn('orders', $key)) {
-                    $query->where($key, $value);
+    public function updateOrderItem(int $orderItemId, array $data): bool
+    {
+        return OrderItem::findOrFail($orderItemId)->update($data);
+    }
+
+    public function removeOrderItem(int $orderItemId): bool
+    {
+        return OrderItem::findOrFail($orderItemId)->delete();
+    }
+
+    public function createOrder(array $data): Order
+    {
+        return DB::transaction(function () use ($data) {
+            $order = Order::create($data);
+            event(new OrderActionEvent($order, 'created'));
+
+            if (isset($data['order_items']) && is_array($data['order_items'])) {
+                foreach ($data['order_items'] as $item) {
+                    $order->orderItems()->create($item);
                 }
             }
+
+            return $order;
+        });
+    }
+
+    public function changeOrderStatus(int $orderId, string $status): bool
+    {
+        $order = Order::findOrFail($orderId);
+        event(new OrderActionEvent($order, 'status'));
+        return $order->update(['order_status' => $status]);
+    }
+
+    public function getOrdersByFilters(array $filters): Collection
+    {
+        $query = Order::query();
+
+        if (isset($filters['status'])) {
+            $query->where('order_status', $filters['status']);
+        }
+        if (isset($filters['customer_id'])) {
+            $query->where('customer_id', $filters['customer_id']);
+        }
+        if (isset($filters['date_range'])) {
+            $query->whereBetween('created_at', $filters['date_range']);
         }
 
-        // You can also add pagination here if needed
         return $query->get();
     }
-
-    // Get orders by user ID
-    public function getOrdersByUserId(string $userId): Collection
+    public function prioritizeOrders(): array
     {
-        return Order::where('user_id', $userId)->get();
-    }
-
-    // Get orders by user role
-    public function getOrdersByRole(string $role, string $userId): Collection
-    {
-        return Order::whereHas('user', function ($query) use ($role, $userId) {
-            $query->where('role', $role)->where('user_id', $userId);
+        $vipCustomers = Order::whereHas('customer', function ($query) {
+            $query->whereHas('loyaltyPoints', function ($subQuery) {
+                $subQuery->where('points', '>', 1000);
+            });
         })->get();
-    }
-    // Get orders by status
-    public function getOrdersByStatus(string $status): Collection
-    {
-        return Order::where('status', $status)->get();
-    }
+        //dd($vipCustomers);
 
-    // Get orders by payment status
-    public function getOrdersByPaymentStatus(string $paymentStatus): Collection
-    {
-        return Order::where('payment_status', $paymentStatus)->get();
+        $highValueOrders = Order::where('grand_total', '>', 500)->get();
+
+        return [
+            'vip_customers' => $vipCustomers,
+            'high_value_orders' => $highValueOrders,
+        ];
     }
 
-    // Get orders by tracking number
-    public function getOrdersByTrackingNumber(string $trackingNumber): Collection
+    public function getDelayedOrders(): Collection
     {
-        return Order::where('tracking_number', $trackingNumber)->get();
+        return Order::whereNotNull('delayed_at')->get();
     }
 
-    // Get orders by order number
-    public function getOrdersByOrderNumber(string $orderNumber): Collection
+    // Mark an order as delayed
+    public function markOrderAsDelayed(Order $order)
     {
-        return Order::where('order_number', $orderNumber)->get();
+        if (!$order->delayed_at) {
+            $order->delayed_at = Carbon::now();
+            $order->save();
+        }
     }
 
-    // Get orders by specific address type (e.g., shipping or billing)
-    public function getOrdersByAddress(string $type, string $address): Collection
+    // Escalate an order
+    public function escalateOrder(Order $order)
     {
-        return Order::whereHas('address', function ($query) use ($type, $address) {
-            $query->where('type', $type)->where('address', $address);
-        })->get();
+        $order->order_status = 'escalated';
+        $order->escalated_at = Carbon::now();
+        $order->escalation_status = 'escalated';
+        $order->save();
     }
 
-    // Get orders by shipping zone
-    public function getOrdersByShippingZone(int $shippingZoneId): Collection
+    // Handle escalation process for delayed orders
+    public function escalateDelayedOrders(): bool
     {
-        return Order::where('shipping_zone_id', $shippingZoneId)->get();
-    }
-
-    // Get orders for a specific vendor with optional filters
-    public function getVendorOrders(int $vendorId, array $filters = []): Collection
-    {
-        $query = Order::where('vendor_id', $vendorId);
-
-        foreach ($filters as $key => $value) {
-            if ($key === 'status') {
-                $query->where('status', $value);
+        $orders = $this->getDelayedOrders();
+        \Log::info('Checking delayed orders for escalation...');
+        
+        if ($orders->isEmpty()) {
+            \Log::info('No delayed orders found for escalation.');
+            return false; // Exit if no orders are found
+        }
+    
+        $escalated = false;
+        foreach ($orders as $order) {
+            \Log::info('Checking order:', ['order' => $order->toArray()]);
+            
+            if ($order->isDelayed()) {
+                \Log::info('Escalating order:', ['order_number' => $order->order_number]);
+                $this->markOrderAsDelayed($order);
+                $this->escalateOrder($order);
+                $escalated = true;
+                \Log::info('Order escalated:', ['order_number' => $order->order_number]);
+            } else {
+                \Log::info('Order is not delayed enough for escalation:', ['order_number' => $order->order_number]);
             }
-            // Add more filters as needed
+        }
+    
+        if ($escalated) {
+            \Log::info('Delayed orders have been escalated.');
+        } else {
+            \Log::info('No orders were escalated.');
+        }
+    
+        return $escalated;
+    }
+    public function getHighValueOrders(): Collection
+    {
+        return Order::where('total_amount', '>', 1000)->get();
+    }
+
+    public function archiveOldOrders(): bool
+    {
+        $oldOrders = Order::where('created_at', '<', now()->subYear())->get();
+
+        foreach ($oldOrders as $order) {
+            $order->update(['is_archived' => true]);
         }
 
-        return $query->get();
+        \Log::info("📦 Archived " . count($oldOrders) . " old orders.");
+
+        return true;
     }
 
-    // Get orders by product ID
-    public function getOrdersByProduct(int $productId): Collection
+    public function predictOrderTrends(): array
     {
-        return Order::whereHas('products', function ($query) use ($productId) {
-            $query->where('product_id', $productId);
-        })->get();
+        return Order::selectRaw('DATE(created_at) as date, COUNT(*) as total_orders')
+            ->groupBy('date')
+            ->orderBy('date', 'desc')
+            ->get()
+            ->toArray();
     }
 
-    // Get orders by order item ID
-    public function getOrdersByOrderItem(int $orderItemId): Collection
+    public function detectFraudulentOrder(int $orderId): bool
     {
-        return Order::whereHas('orderItems', function ($query) use ($orderItemId) {
-            $query->where('order_item_id', $orderItemId);
-        })->get();
+        $order = Order::findOrFail($orderId);
+    
+        // Check if the order has an associated customer
+        $customer = $order->customer;
+        if (!$customer) {
+            Log::warning("Order ID: {$orderId} does not have a valid customer.");
+            return false; // Or handle this case appropriately
+        }
+    
+        // Business logic for detecting fraudulent orders
+        $isHighRiskCustomer = $customer->risk_level === 'high';
+        $isLargeOrder = $order->total_amount > 5000;
+        $isFraudulentHistory = $customer->orders()->where('is_fraudulent', true)->exists();
+        $isSuspiciousAddress = $this->isSuspiciousAddress($order->shipping_address);
+    
+        // Add business logic to determine if the order is fraudulent
+        if ($isLargeOrder && $isHighRiskCustomer && ($isFraudulentHistory || $isSuspiciousAddress)) {
+            Log::warning("Fraudulent order detected for Order ID: {$order->id}");
+            return true;
+        }
+    
+        return false;
     }
 
-    // Get orders by item details
-    public function getOrdersByItemDetails(array $itemFilters): Collection
+    /**
+     * Check if the address is suspicious based on some business logic.
+     *
+     * @param string $address
+     * @return bool
+     */
+    private function isSuspiciousAddress(string $address): bool
     {
-        $query = Order::query();
-
-        foreach ($itemFilters as $key => $value) {
-            if ($key === 'item_name') {
-                $query->whereHas('orderItems', function ($query) use ($value) {
-                    $query->where('name', $value);
-                });
-            } // Add more item filters as needed
+        // Example: Check if the address contains certain patterns or suspicious keywords
+        $suspiciousKeywords = ['unknown', 'invalid', 'suspicious'];
+        
+        foreach ($suspiciousKeywords as $keyword) {
+            if (strpos(strtolower($address), $keyword) !== false) {
+                return true;
+            }
         }
 
-        return $query->get();
+        return false;
     }
 
-    // Get orders by amount range
-    public function getOrdersByAmountRange(string $type, float $minAmount, float $maxAmount): Collection
+    public function automateOrderProcessing(int $orderId): bool
     {
-        $query = Order::query();
+        $order = Order::findOrFail($orderId);
 
-        if ($type === 'greater_than') {
-            $query->where('total_amount', '>', $minAmount);
-        } elseif ($type === 'less_than') {
-            $query->where('total_amount', '<', $maxAmount);
+        // Check if the order is already processed
+        if ($order->order_status === 'processed') {
+            Log::info("Order ID: {$orderId} is already processed.");
+            return false;
         }
 
-        return $query->whereBetween('total_amount', [$minAmount, $maxAmount])->get();
+        // Check if the order has any payment issues or fraud flags
+        if ($this->detectFraudulentOrder($orderId)) {
+            Log::warning("Order ID: {$orderId} is flagged as fraudulent and cannot be processed.");
+            return false;
+        }
+
+        // Process the order automatically
+        $order->update(['order_status' => 'processing', 'processed_at' => now()]);
+
+        // Dispatch an event for order processing
+        event(new OrderActionEvent($order, 'processed'));
+
+        // Send email notification after order processing
+        $this->sendOrderProcessedNotification($order);
+
+        // Log the successful processing
+        Log::info("Order ID: {$orderId} has been successfully processed.");
+
+        return true;
     }
 
-    public function predictOrder(string $userId)
-{
-    // Fetch the most recent 5 orders for the user
-    $recentOrders = Order::where('user_id', $userId)
-        ->orderBy('order_date', 'desc')
-        ->limit(5)
-        ->pluck('id');
-    \Log::info('Recent Orders:', $recentOrders->toArray());
-
-    // If no recent orders are found
-    if ($recentOrders->isEmpty()) {
-        return [
-            'message' => 'No order history found for this user.',
-            'predicted_products' => []
-        ];
+    /**
+     * Send a notification to the customer when their order is processed.
+     *
+     * @param Order $order
+     * @return void
+     */
+    private function sendOrderProcessedNotification(Order $order)
+    {
+        // Assuming a Notification class exists
+        //$order->customer->notify(new OrderProcessedNotification($order));
+        event(new OrderActionEvent($order, 'processed'));
     }
-
-    // Fetch order items related to the recent orders
-    $predictedProducts = OrderItem::whereIn('order_id', $recentOrders)
-        ->select('product_id', 'order_id', 'product_name', 'quantity', 'total_price')
-        ->get();
-
-    // Log the retrieved order items for debugging
-    \Log::info('OrderItems with product_id:', $predictedProducts->toArray());
-
-    // If no order items are found
-    if ($predictedProducts->isEmpty()) {
-        return [
-            'message' => 'No products found for recent orders.',
-            'predicted_products' => []
-        ];
-    }
-
-    // Return the predicted products
-    return [
-        'message' => 'Predicted products for next order',
-        'predicted_products' => $predictedProducts
-    ];
-}
 }

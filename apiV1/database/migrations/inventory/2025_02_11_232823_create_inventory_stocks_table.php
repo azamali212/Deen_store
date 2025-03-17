@@ -15,6 +15,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('product_id')->constrained()->onDelete('cascade');
             $table->integer('quantity')->default(0);
+            $table->integer('auto_restock_threshold')->default(10);
+            $table->foreignId('warehouse_id')->nullable();
             $table->timestamps();
         });
     }

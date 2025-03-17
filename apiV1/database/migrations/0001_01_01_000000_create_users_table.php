@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
+     * Social Media add in my porject 
      * Run the migrations.
      */
     public function up(): void

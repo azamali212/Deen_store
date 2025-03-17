@@ -2,39 +2,53 @@
 
 namespace App\Repositories\Order;
 
+use App\Models\Order;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
+
 interface OrderRepositoryInterface{
 
    // CRUD Operations
-   public function all(int $perPage = 15);
-   public function show(int $id);
-   public function create(array $data);
-   public function update(array $data, int $id);
-   public function delete(int $id);
+  
 
-   // Order Queries
-   public function getOrdersByFilters(array $filters);
-   public function getOrdersByUserId(string $userId);
-   public function getOrdersByRole(string $role, string $userId);
-   public function getOrdersByStatus(string $status);
-   public function getOrdersByPaymentStatus(string $paymentStatus);
-   public function getOrdersByTrackingNumber(string $trackingNumber);
-   public function getOrdersByOrderNumber(string $orderNumber);
+   public function getAllOrders(): LengthAwarePaginator;
+    
+    public function getOrderById(int $id): ?Order;
 
-   // Address & Shipping Queries
-   public function getOrdersByAddress(string $type, string $address);
-   public function getOrdersByShippingZone(int $shippingZoneId);
+    //public function escalateDelayedOrders();
+    
+    public function createOrder(array $data): Order;
+    
+    public function updateOrder(int $orderId, array $data): bool;
+    
+    public function deleteOrder(int $orderId): bool;
+    
+    public function addOrderItems(int $orderId, array $items): bool;
+    
+    public function updateOrderItem(int $orderItemId, array $data): bool;
+    
+    public function removeOrderItem(int $orderItemId): bool;
 
-   // Vendor-Specific Queries
-   public function getVendorOrders(int $vendorId, array $filters = []);
-   
-   // Order Item Queries
-   public function getOrdersByProduct(int $productId);
-   public function getOrdersByOrderItem(int $orderItemId);
-   public function getOrdersByItemDetails(array $itemFilters);
+    public function changeOrderStatus(int $orderId, string $status): bool;
 
-   // Financial Queries
-   public function getOrdersByAmountRange(string $type, float $minAmount, float $maxAmount);
+    public function predictOrderTrends(): array; // New: Predict order trends
 
-   public function predictOrder(string $userId);
+    public function detectFraudulentOrder(int $orderId): bool; // New: Fraud detection
 
+    public function automateOrderProcessing(int $orderId): bool; // New: Order automation
+
+    public function getOrdersByFilters(array $filters): Collection;
+
+    public function prioritizeOrders(): array;
+
+    public function escalateDelayedOrders(): bool;
+    public function escalateOrder(Order $order);
+    public function markOrderAsDelayed(Order $order);
+    public function getDelayedOrders(): Collection;
+
+    public function getHighValueOrders(): Collection;
+
+  
+
+    public function archiveOldOrders(): bool;
 }

@@ -21,13 +21,18 @@ class OrderRequest extends FormRequest
      */
     public function rules(): array
     {
+        if ($this->routeIs('orders.changeStatus')) {
+            return [
+                'status' => 'required|string|in:pending,shipped,delivered,canceled',
+            ];
+        }
         return [
             'order_manager_id' => 'nullable|exists:order_managers,id',
             'store_manager_id' => 'nullable|exists:store_managers,id',
             'customer_id'      => 'required|exists:customers,id',
             'vendor_id'        => 'nullable|exists:vendors,id',
             'order_number'     => 'required|string|unique:orders,order_number',
-            'total_amount'     => 'required|numeric|min:0',
+            //'total_amount'     => 'required|numeric|min:0',
             'discount_amount'  => 'nullable|numeric|min:0',
             'tax_amount'       => 'nullable|numeric|min:0',
             'shipping_amount'  => 'nullable|numeric|min:0',

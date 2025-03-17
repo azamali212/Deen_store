@@ -34,7 +34,7 @@ class Customer extends Model
     {
         return $this->hasMany(Review::class);
     }
-   public function products()
+    public function products()
     {
         return $this->hasMany(Product::class);
     }
@@ -62,5 +62,10 @@ class Customer extends Model
     public function wishlists()
     {
         return $this->hasMany(Wishlist::class);
+    }
+
+    public function loyaltyPoints()
+    {
+        return $this->hasMany(LoyaltyPoint::class, 'customer_id');
     }
 }

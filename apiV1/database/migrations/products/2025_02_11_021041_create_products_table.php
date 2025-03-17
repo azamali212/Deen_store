@@ -9,6 +9,10 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
+     /**
+     * Social Media add in my porject 
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::create('products', function (Blueprint $table) {

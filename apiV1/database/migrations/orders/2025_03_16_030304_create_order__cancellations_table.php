@@ -11,15 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('order_items', function (Blueprint $table) {
+        Schema::create('order_cancellations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('order_id')->nullable();
-            $table->foreignId('product_id')->nullable();
-            $table->string('product_name');
-            $table->decimal('price', 10, 2);
-            $table->decimal('discount_price', 10, 2)->default(0.00);
-            $table->integer('quantity');
-            $table->decimal('total_price', 10, 2);
+            $table->foreignUlid('user_id')->nullable(); // Who canceled the order
+            $table->text('reason');
+            $table->enum('cancellation_status', ['requested', 'approved', 'denied'])->default('requested');
+            $table->timestamp('cancelled_at')->nullable();
             $table->timestamps();
         });
     }
@@ -29,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('order_items');
+        Schema::dropIfExists('order__cancellations');
     }
 };
