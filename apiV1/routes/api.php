@@ -37,4 +37,5 @@ Route::prefix('v1')->group(function () {
     require base_path('routes/v1/cart/cart.php');
     require base_path('routes/v1/gift/gift.php');
     require base_path('routes/v1/order/order.php');
+    require base_path('routes/v1/inventory/inventory.php');
 });

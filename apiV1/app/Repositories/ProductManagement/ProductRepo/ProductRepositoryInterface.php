@@ -8,7 +8,7 @@ interface ProductRepositoryInterface
     public function updateProduct(array $data, int $id);
     public function deleteProduct(int $id);
     public function getProduct(int $id);
-    public function getAllProducts();
+    public function getAllProducts(int $perPage);
 
     // Optimized filtering method instead of many separate filter methods
     public function filterProducts(array $filters);

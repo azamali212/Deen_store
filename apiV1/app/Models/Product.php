@@ -96,4 +96,21 @@ class Product extends Model
     {
         return $this->hasMany(PurchaseOrder::class);
     }
+
+    public function inventoryStocks()
+    {
+        return $this->hasMany(InventoryStock::class);
+    }
+
+    /**
+     * Get the product bundles associated with the product.
+     */
+    public function productBundles()
+    {
+        return $this->hasMany(Product_Bundle::class);
+    }
+    public function inventoryLogs()
+    {
+        return $this->hasMany(InventoryLog::class);
+    }
 }

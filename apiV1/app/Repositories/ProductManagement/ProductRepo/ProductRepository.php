@@ -3,6 +3,7 @@
 namespace App\Repositories\ProductManagement\ProductRepo;
 
 use App\Events\ProductCreated;
+use App\Events\ProductCreatedByBundleAndBadge;
 use App\Events\ProductDeleted;
 use App\Events\ProductUpdated;
 use App\Models\Product;
@@ -38,6 +39,7 @@ class ProductRepository implements ProductRepositoryInterface
         \Log::info('Product Data Received:', $data); // Log the data to verify input
 
         $product = Product::create($data);
+        event(new ProductCreatedByBundleAndBadge($product));
 
         if (!$product) {
             \Log::error('Product creation failed.');

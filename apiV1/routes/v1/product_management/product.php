@@ -1,15 +1,12 @@
 <?php
 
-use App\Http\Controllers\AI\AIController;
-use App\Http\Controllers\Auth\AuthController;
+
 use App\Http\Controllers\ProductManagement\AIFeatureProduct\AIProductController;
 use App\Http\Controllers\ProductManagement\AIFeatureProduct\MoreAIProduct\CartAbandonmentController;
 use App\Http\Controllers\ProductManagement\AIFeatureProduct\MoreAIProduct\CollaborativeFilteringController;
 use App\Http\Controllers\ProductManagement\AIFeatureProduct\MoreAIProduct\GeolocationRecommendationController;
 use App\Http\Controllers\ProductManagement\Product\ProductController;
-use App\Http\Controllers\User\UserController;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Http\Request;
 
 
 Route::middleware('auth:api')->group(function () {

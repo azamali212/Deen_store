@@ -14,6 +14,8 @@ use App\Repositories\Email\EmailDraftsRepository;
 use App\Repositories\Email\EmailDraftsRepositoryInterface;
 use App\Repositories\Email\EmailRepository;
 use App\Repositories\Email\EmailRepositoryInterface;
+use App\Repositories\Inventory\InventoryRepository;
+use App\Repositories\Inventory\InventoryRepositoryInterface;
 use App\Repositories\Order\OrderRepository;
 use App\Repositories\Order\OrderRepositoryInterface;
 use App\Repositories\PermissionSettings\Permission\PermissionRepository;
@@ -79,7 +81,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(CartRepositoryInterface::class,CartRepository::class);
         $this->app->bind(CouponsRepositoryInterface::class,CouponsRepository::class);
         $this->app->bind(OrderRepositoryInterface::class, OrderRepository::class);
-
+        $this->app->bind(InventoryRepositoryInterface::class, InventoryRepository::class);
 
         
         //Validations Services
