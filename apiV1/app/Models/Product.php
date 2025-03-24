@@ -27,7 +27,9 @@ class Product extends Model
         'is_active',
         'is_featured',
         'category_id',
-        'brand_id'
+        'brand_id',
+        'supplier_id', 
+        'is_supplier_product'
     ];
 
     //SearchAble Array 
@@ -112,5 +114,21 @@ class Product extends Model
     public function inventoryLogs()
     {
         return $this->hasMany(InventoryLog::class);
+    }
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    // Scope to filter only customer products
+    public function scopeCustomerProducts($query)
+    {
+        return $query->where('is_supplier_product', false);
+    }
+
+    // Scope to filter only supplier products
+    public function scopeSupplierProducts($query)
+    {
+        return $query->where('is_supplier_product', true);
     }
 }

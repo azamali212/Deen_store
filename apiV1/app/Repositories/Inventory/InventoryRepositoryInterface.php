@@ -7,7 +7,7 @@ interface InventoryRepositoryInterface
     public function create(array $data);
     public function update(array $data, int $id);
     public function delete(int $id);
-    public function find(int $id);
+    public function findInventory($inventoryId);
     public function all(int $perPage);
     public function search(array $data);
 
@@ -26,14 +26,11 @@ interface InventoryRepositoryInterface
     public function allocateStockForOrder(int $productId, int $quantity);
     public function transferStock(int $fromWarehouseId, int $toWarehouseId, int $productId, int $quantity);
     public function getWarehouseStock(int $warehouseId);
-    public function generateInventoryReport(array $filters);
+    public function generateInventoryReport(array $filters, int $perPage);
+    public function exportInventoryReport(array $filters);
 
     // Supplier Management
-    public function createSupplier(array $data);
-    public function updateSupplier(int $supplierId, array $data);
-    public function deleteSupplier(int $supplierId);
-    public function getSupplier(int $supplierId);
-    public function listSuppliers(array $filters);
+   
 
     // Purchase Order Management
     public function createPurchaseOrder(array $data);

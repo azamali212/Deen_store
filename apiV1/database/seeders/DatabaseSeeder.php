@@ -6,6 +6,10 @@ use App\Models\User;
 use Database\Factories\EmailStatusFactory;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use App\Models\Supplier;
+use App\Models\PurchaseOrder;
+use App\Models\SupplierCategory;
+use App\Models\SupplierPayment;
 
 class DatabaseSeeder extends Seeder
 {
@@ -40,5 +44,16 @@ class DatabaseSeeder extends Seeder
         $this->call([OrderManagerSeeder::class]);
         $this->call(OrderItemSeeder::class);
         $this->call(InventorySeeder::class);
+        // Seed Supplier Categories
+        SupplierCategory::factory(5)->create();
+
+        // Seed Suppliers
+        Supplier::factory(10)->create();
+
+        // Seed Purchase Orders
+        PurchaseOrder::factory(20)->create();
+
+        // Seed Supplier Payments
+        SupplierPayment::factory(15)->create();
     }
 }

@@ -13,10 +13,14 @@ return new class extends Migration
     {
         Schema::create('purchase_orders', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('supplier_id')->constrained()->onDelete('cascade');
-            $table->foreignId('product_id')->constrained()->onDelete('cascade');
+            $table->unsignedBigInteger('supplier_id');
+            $table->unsignedBigInteger('product_id');
             $table->integer('quantity');
+            $table->timestamp('delivered_at')->nullable(); // Added delivered_at field
+            $table->timestamp('expected_delivery')->nullable(); // Added expected_delivery field
+            $table->decimal('rating', 3, 2)->nullable();
             $table->decimal('total_cost', 10, 2);
+            $table->string('order_number')->nullable();
             $table->enum('status', ['pending', 'received', 'cancelled'])->default('pending');
             $table->timestamps();
         });

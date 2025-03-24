@@ -36,6 +36,8 @@ use App\Repositories\ProductManagement\BaseRepo\BaseRepository;
 use App\Repositories\ProductManagement\BaseRepo\BaseRepositoryInterface;
 use App\Repositories\ProductManagement\ProductRepo\ProductRepository;
 use App\Repositories\ProductManagement\ProductRepo\ProductRepositoryInterface;
+use App\Repositories\SupplierManagement\SupplierRepository;
+use App\Repositories\SupplierManagement\SupplierRepositoryInterface;
 use App\Repositories\User\UserRepository;
 use App\Repositories\User\UserRepositoryInterface;
 use App\Services\AI\Guzzle\AIAuth;
@@ -82,6 +84,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(CouponsRepositoryInterface::class,CouponsRepository::class);
         $this->app->bind(OrderRepositoryInterface::class, OrderRepository::class);
         $this->app->bind(InventoryRepositoryInterface::class, InventoryRepository::class);
+        $this->app->bind(SupplierRepositoryInterface::class, SupplierRepository::class);
 
         
         //Validations Services

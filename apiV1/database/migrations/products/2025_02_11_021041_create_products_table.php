@@ -9,7 +9,7 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-     /**
+    /**
      * Social Media add in my porject 
      * Run the migrations.
      */
@@ -19,6 +19,8 @@ return new class extends Migration
             $table->id();
             $table->string('name', 255);
             $table->unsignedBigInteger('product_manager_id')->default(1)->nullable();
+            $table->boolean('is_supplier_product')->default(false); // Identifies supplier products
+            $table->unsignedBigInteger('supplier_id')->nullable();
             $table->unsignedBigInteger('store_manager_id')->default(1)->nullable();
             $table->unsignedBigInteger('vendor_id')->default(1)->nullable();
             $table->string('slug', 255)->unique();

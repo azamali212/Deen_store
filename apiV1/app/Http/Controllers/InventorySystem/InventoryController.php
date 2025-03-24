@@ -27,9 +27,9 @@ class InventoryController extends Controller
         ], 200);
     }
 
-    public function getSingle(Request $request, $id)
+    public function getSingle(Request $request, $inventoryId)
     {
-        $inventory = $this->inventoryRepository->find($id);
+        $inventory = $this->inventoryRepository->findInventory($inventoryId);
         return response()->json([
             'success' => true,
             'data' => $inventory
@@ -196,5 +196,59 @@ class InventoryController extends Controller
         $response = $this->inventoryRepository->transferStock($fromWarehouseId, $toWarehouseId, $productId, $quantity);
 
         return $response;  // The response is returned from the repository
+    }
+
+    public function getWarehouseStock(Request $request, int $warehouseId)
+    {
+        $response = $this->inventoryRepository->getWarehouseStock($warehouseId);
+        //dd($response);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Data retrieved successfully.',
+            'data' => $response
+        ], 200);
+    }
+
+    public function generateInventoryReport(Request $request)
+    {
+        try {
+            $filters = $request->only(['product_id', 'warehouse_id', 'date_range']);
+            $perPage = (int) $request->input('per_page', 20);
+
+            $report = $this->inventoryRepository->generateInventoryReport($filters, $perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $report
+            ]);
+        } catch (\Exception $e) {
+            \Log::error("Error generating inventory report: " . $e->getMessage());
+            return response()->json(['error' => 'Unable to generate report.'], 500);
+        }
+    }
+    /**
+     * Export inventory report as a CSV file.
+     */
+    public function exportInventoryReport(Request $request)
+    {
+        try {
+            $filters = $request->only(['product_id', 'warehouse_id', 'date_range']);
+
+            // Log filters for debugging
+            \Log::info('Export Filters: ', $filters);
+
+            $filePath = $this->inventoryRepository->exportInventoryReport($filters);
+
+            if (!$filePath) {
+                throw new \Exception('File path is empty.');
+            }
+
+            // Return the generated file for download
+            return response()->download($filePath);
+        } catch (\Exception $e) {
+            \Log::error("Error exporting inventory report: " . $e->getMessage());
+            return response()->json(['error' => 'Unable to export report.'], 500);
+        }
     }
 }

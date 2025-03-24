@@ -7,7 +7,10 @@ use App\Models\InventoryStock;
 use App\Models\Product_Batche;
 use App\Models\Sale;
 use Carbon\Carbon;
+use Exception;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class InventoryRepository implements InventoryRepositoryInterface
 {
@@ -17,12 +20,12 @@ class InventoryRepository implements InventoryRepositoryInterface
         // Create Inventory
         $inventory =  InventoryStock::create($data);
         if (!$inventory) {
-            throw new \Exception('Inventory creation failed.');
+            throw new Exception('Inventory creation failed.');
         }
         return $inventory;
     }
 
-    public function update(array $data, int $id)
+    public function update(array $data, int $id) 
     {
         // Update Inventory
         $inventoryStock = InventoryStock::findOrFail($id);
@@ -38,9 +41,9 @@ class InventoryRepository implements InventoryRepositoryInterface
         return true;
     }
 
-    public function find(int $id)
+    public function findInventory($inventoryId)
     {
-        return InventoryStock::with(['product', 'warehouse'])->findOrFail($id);
+        return InventoryStock::with(['product', 'warehouse'])->findOrFail($inventoryId);
     }
 
     public function all(int $perPage = 10)
@@ -177,7 +180,6 @@ class InventoryRepository implements InventoryRepositoryInterface
     }
      */
 
-
     public function forecastSales(array $data)
     {
         return Sale::whereBetween('sale_date', [$data['start_date'], $data['end_date']])
@@ -259,39 +261,131 @@ class InventoryRepository implements InventoryRepositoryInterface
 
     public function getWarehouseStock(int $warehouseId)
     {
-        // Get Warehouse Stock
+        // Use caching for optimization (store stock data for 10 minutes)
+        return Cache::remember("warehouse_stock_{$warehouseId}", 600, function () use ($warehouseId) {
+            return InventoryStock::where('warehouse_id', $warehouseId)
+                ->with(['product' => function ($query) {
+                    $query->select('id', 'name', 'sku', 'category_id');
+                }])
+                ->orderBy('updated_at', 'desc')
+                ->get()
+                ->map(function ($stock) {
+                    return [
+                        'product_id' => $stock->product_id,
+                        'product_name' => $stock->product->name,
+                        'sku' => $stock->product->sku,
+                        'category' => optional($stock->product->category)->name ?? 'Uncategorized',
+                        'warehouse_id' => $stock->warehouse_id,
+                        'available_stock' => $stock->quantity,
+                        'last_updated' => $stock->updated_at->format('Y-m-d H:i:s'),
+                    ];
+                });
+        });
     }
 
-    public function generateInventoryReport(array $filters)
+    public function generateInventoryReport(array $filters, int $perPage = 20)
     {
-        // Generate Inventory Report
+        try {
+            // Log the filters and perPage value for debugging
+            \Log::info('Filters:', $filters);
+            \Log::info('PerPage:', [$perPage]);
+
+            // Cast the filter values to integers or null if not provided
+            $productId = isset($filters['product_id']) ? (int) $filters['product_id'] : null;
+            $warehouseId = isset($filters['warehouse_id']) ? (int) $filters['warehouse_id'] : null;
+            $dateRange = isset($filters['date_range']) ? $filters['date_range'] : null;
+
+            return Cache::remember("inventory_report_" . md5(json_encode($filters)), 600, function () use ($productId, $warehouseId, $filters, $perPage) {
+                $query = InventoryStock::select('id', 'product_id', 'warehouse_id', 'quantity', 'updated_at')
+                    ->with([
+                        'product:id,name,sku',
+                        'warehouse:id,name'
+                    ])
+                    ->when(!empty($productId), fn($q) => $q->where('product_id', $productId))
+                    ->when(!empty($warehouseId), fn($q) => $q->where('warehouse_id', $warehouseId))
+                    ->when(!empty($filters['date_range']) && isset($filters['date_range']['from'], $filters['date_range']['to']), fn($q) => $q->whereBetween('created_at', [$filters['date_range']['from'], $filters['date_range']['to']]))
+                    ->orderBy('updated_at', 'desc');
+
+                $results = $query->paginate($perPage);
+
+                if ($results->isEmpty()) {
+                    \Log::info('No results found for the given filters.');
+                    return response()->json(['message' => 'No records found.'], 404);
+                }
+
+                return $results;
+            });
+        } catch (\Throwable $e) {
+            \Log::error('Error generating inventory report: ' . $e->getMessage(), [
+                'filters' => $filters,
+                'exception' => $e
+            ]);
+            return response()->json(['error' => 'Unable to generate report.'], 500);
+        }
     }
 
-    public function createSupplier(array $data)
+    /**
+     * Export inventory report to a CSV file.
+     */
+    public function exportInventoryReport(array $filters)
     {
-        // Create Supplier
+        try {
+            \Log::info('Exporting inventory report with filters: ', $filters);
+    
+            // Generate the report data
+            $reportData = $this->generateInventoryReport($filters, 1000);
+    
+            // Log if no data is returned
+            if ($reportData->isEmpty()) {
+                \Log::warning('No data found for the given filters');
+                throw new \Exception('No data found for the report.');
+            }
+    
+            $csvFileName = 'inventory_report_' . now()->format('Ymd_His') . '.csv';
+            $csvFilePath = storage_path('app/reports/' . $csvFileName);
+    
+            // Ensure the directory exists and is writable
+            $directoryPath = storage_path('app/reports');
+            if (!is_dir($directoryPath)) {
+                \Log::info('Creating directory: ' . $directoryPath);
+                mkdir($directoryPath, 0775, true);  // Create the directory if it doesn't exist
+            }
+    
+            // Open file for writing
+            $file = fopen($csvFilePath, 'w');
+            if (!$file) {
+                throw new \Exception('Failed to open file for writing.');
+            }
+    
+            // Add header row
+            fputcsv($file, ['Product Name', 'SKU', 'Warehouse', 'Available Stock', 'Last Updated']);
+    
+            // Write the data rows to the CSV file
+            foreach ($reportData as $stock) {
+                fputcsv($file, [
+                    $stock->product->name ?? 'N/A',
+                    $stock->product->sku ?? 'N/A',
+                    $stock->warehouse->name ?? 'N/A',
+                    $stock->quantity,
+                    $stock->updated_at->format('Y-m-d H:i:s'),
+                ]);
+            }
+    
+            fclose($file);
+    
+            // Log successful export
+            \Log::info("Report exported successfully to: " . $csvFilePath);
+    
+            // Return the file path for download
+            return $csvFilePath;
+        } catch (\Exception $e) {
+            // Log the exception for better debugging
+            \Log::error('Error in exportInventoryReport: ' . $e->getMessage());
+            return false; // Return false if export fails
+        }
     }
 
-    public function updateSupplier(int $supplierId, array $data)
-    {
-        // Update Supplier
-    }
-
-    public function deleteSupplier(int $supplierId)
-    {
-        // Delete Supplier
-    }
-
-    public function getSupplier(int $supplierId)
-    {
-        // Get Supplier
-    }
-
-    public function listSuppliers(array $filters)
-    {
-        // List Suppliers
-    }
-
+   
     public function createPurchaseOrder(array $data)
     {
         // Create Purchase Order

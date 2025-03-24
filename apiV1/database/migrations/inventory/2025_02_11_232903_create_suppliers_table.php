@@ -18,6 +18,12 @@ return new class extends Migration
             $table->string('phone');
             $table->string('email')->nullable();
             $table->text('address')->nullable();
+            $table->unsignedBigInteger('supplier_category_id')->nullable();
+            $table->boolean('is_preferred')->default(false);
+            $table->boolean('blacklisted')->default(false);
+            $table->text('blacklist_reason')->nullable();
+            $table->enum('contract_status', ['active', 'terminated', 'pending'])->default('active');
+            $table->decimal('performance_rating', 3, 2)->default(0.00);
             $table->timestamps();
         });
     }

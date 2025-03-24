@@ -23,4 +23,7 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/inventory/forecast-sales', [InventoryController::class, 'forecastSales']);
     Route::post('/inventory/allocatStockOrder/{productId}',[InventoryController::class,'allocateStockForOrder']);
     Route::post('/inventory/transfer/{fromWarehouseId}/{toWarehouseId}', [InventoryController::class, 'transferStock']);
+    Route::get('/inventory/warehouse-stock/{warehouseId}', [InventoryController::class, 'getWarehouseStock']);
+    Route::post('/inventory/report', [InventoryController::class, 'generateInventoryReport']);
+    Route::get('/inventory/report/export', [InventoryController::class, 'exportInventoryReport']);
 });
