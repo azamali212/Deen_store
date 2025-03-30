@@ -17,6 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'cart.security' => \App\Http\Middleware\CartSecurityMiddleware::class,
+            'inventory-manage' => \App\Http\Middleware\InventoryManagePermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

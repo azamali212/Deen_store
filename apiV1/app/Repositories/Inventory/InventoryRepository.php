@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Inventory;
 
+use App\Events\InventoryEvent;
 use App\Models\InventoryLog;
 use App\Models\InventoryStock;
 use App\Models\Product_Batche;
@@ -22,6 +23,7 @@ class InventoryRepository implements InventoryRepositoryInterface
         if (!$inventory) {
             throw new Exception('Inventory creation failed.');
         }
+        event(new InventoryEvent('New inventory added.', $inventory));
         return $inventory;
     }
 
@@ -30,6 +32,7 @@ class InventoryRepository implements InventoryRepositoryInterface
         // Update Inventory
         $inventoryStock = InventoryStock::findOrFail($id);
         $inventoryStock->update($data);
+        event(new InventoryEvent('New inventory Updated.', $inventoryStock));
         return $inventoryStock;
     }
 
@@ -38,6 +41,7 @@ class InventoryRepository implements InventoryRepositoryInterface
         // Delete Inventory
         $inventoryStock = InventoryStock::findOrFail($id);
         $inventoryStock->delete();
+        event(new InventoryEvent('Inventory Deleted.', $inventoryStock));
         return true;
     }
 
@@ -74,6 +78,7 @@ class InventoryRepository implements InventoryRepositoryInterface
     {
         // Log Inventory
         $inventoryLog = InventoryLog::create($data);
+        event(new InventoryEvent('New inventory logs Created.', $inventoryLog));
         return $inventoryLog;
     }
 
@@ -125,7 +130,8 @@ class InventoryRepository implements InventoryRepositoryInterface
                 'quantity' => $restockAmount,
                 'description' => 'Auto restocked to maintain inventory level.'
             ]);
-
+            event(new InventoryEvent('New inventory Restock.', $inventory));
+            
             // Return success response with the updated inventory details
             return [
                 'success' => true,
@@ -182,7 +188,7 @@ class InventoryRepository implements InventoryRepositoryInterface
 
     public function forecastSales(array $data)
     {
-        return Sale::whereBetween('sale_date', [$data['start_date'], $data['end_date']])
+        $sale = Sale::whereBetween('sale_date', [$data['start_date'], $data['end_date']])
             ->when(isset($data['product_id']), function ($query) use ($data) {
                 $query->where('product_id', $data['product_id']);
             })
@@ -193,6 +199,8 @@ class InventoryRepository implements InventoryRepositoryInterface
                 $query->where('status', $data['status']);
             })
             ->sum('quantity');
+            event(new InventoryEvent('Forcaste Sale.', $sale));
+             return $sale;
     }
 
     public function allocateStockForOrder(int $productId, int $quantity)
@@ -201,7 +209,7 @@ class InventoryRepository implements InventoryRepositoryInterface
             $inventory = InventoryStock::where('product_id', $productId)->first();
 
             if (!$inventory || $inventory->quantity < $quantity) {
-                throw new \Exception('Not enough stock available.');
+                throw new Exception('Not enough stock available.');
             }
 
             // Deduct the allocated quantity

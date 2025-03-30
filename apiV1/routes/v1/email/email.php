@@ -9,58 +9,66 @@ use Illuminate\Http\Request;
 
 
 Route::middleware('auth:api')->group(function () {
-    // Send an email (POST request)
-    Route::post('send-email', [EmailController::class, 'sendEmail']);
+    Route::post('send-email', [EmailController::class, 'sendEmail'])
+        ->middleware('permission:send-email');
 
-    // Get emails for a specific user (GET request)
-    Route::get('user-emails/{userId}/{status?}', [EmailController::class, 'getEmailsForUser']);
+    Route::get('user-emails/{userId}/{status?}', [EmailController::class, 'getEmailsForUser'])
+        ->middleware('permission:view emails');
 
-    // Mark an email as read (POST request)
-    Route::post('mark-as-read/{emailId}', [EmailController::class, 'markAsRead']);
+    Route::post('mark-as-read/{emailId}', [EmailController::class, 'markAsRead'])
+        ->middleware('permission:mark email as read');
 
-    // Mark an email as unread (POST request)
-    Route::post('mark-as-unread/{emailId}', [EmailController::class, 'markAsUnread']);
+    Route::post('mark-as-unread/{emailId}', [EmailController::class, 'markAsUnread'])
+        ->middleware('permission:mark email as unread');
 
-    // Archive an email (POST request)
-    Route::post('archive-email/{emailId}', [EmailController::class, 'archiveEmail']);
+    Route::post('archive-email/{emailId}', [EmailController::class, 'archiveEmail'])
+        ->middleware('permission:archive email');
 
-    // Unarchive an email (POST request)
-    Route::post('unarchive-email/{emailId}', [EmailController::class, 'unarchiveEmail']);
+    Route::post('unarchive-email/{emailId}', [EmailController::class, 'unarchiveEmail'])
+        ->middleware('permission:unarchive email');
 
-    // Delete an email (DELETE request)
-    Route::delete('delete-email/{emailId}', [EmailController::class, 'deleteEmail']);
-    Route::post('/trash/{id}', [EmailController::class, 'moveToTrash']);
-    Route::post('/restore/{id}', [EmailController::class, 'restoreEmail']);
-    Route::delete('/empty/{id}', [EmailController::class, 'emptyTrash']);
-    Route::get('/trash/{userId}', [EmailController::class, 'getTrashedEmails']);
+    Route::delete('delete-email/{emailId}', [EmailController::class, 'deleteEmail'])
+        ->middleware('permission:delete email');
 
-    //Email Drafts
-    Route::post('/email-drafts', [EmailDraftsController::class, 'store']);
+    Route::post('move-to-trash/{id}', [EmailController::class, 'moveToTrash'])
+        ->middleware('permission:move email to trash');
 
-    // Get all drafts for a specific user
-    Route::get('/email-drafts/{userId}', [EmailDraftsController::class, 'index']);
+    Route::post('restore-email/{id}', [EmailController::class, 'restoreEmail'])
+        ->middleware('permission:restore email');
 
-    // Get a specific draft by its ID
-    Route::get('/{userId}/drafts/{draftId}', [EmailDraftsController::class, 'show']);
+    Route::delete('empty-trash/{id}', [EmailController::class, 'emptyTrash'])
+        ->middleware('permission:empty trash');
 
-    // Delete a draft
-    Route::delete('/{userId}/drafts/{draftId}', [EmailDraftsController::class, 'destroy']);
+    Route::get('trash/{userId}', [EmailController::class, 'getTrashedEmails'])
+        ->middleware('permission:view trashed emails');
 
-    // Restore a draft from the trash
-    Route::put('/{userId}/drafts/{draftId}/restore', [EmailDraftsController::class, 'restore']);
+    Route::post('email-drafts', [EmailDraftsController::class, 'store'])
+        ->middleware('permission:create drafts');
 
-    // Permanently delete a draft
-    Route::delete('/{userId}/drafts/{draftId}/permanently', [EmailDraftsController::class, 'emptyTrash']);
+    Route::get('email-drafts/{userId}', [EmailDraftsController::class, 'index'])
+        ->middleware('permission:view drafts');
 
-    // Move a draft to the trash
-    Route::put('/{userId}/drafts/{draftId}/trash', [EmailDraftsController::class, 'moveToTrash']);
+    Route::get('{userId}/drafts/{draftId}', [EmailDraftsController::class, 'show'])
+        ->middleware('permission:view specific draft');
 
-    // Update the status of multiple drafts
-    Route::put('/email-drafts/status', [EmailDraftsController::class, 'updateStatus']);
+    Route::delete('{userId}/drafts/{draftId}', [EmailDraftsController::class, 'destroy'])
+        ->middleware('permission:delete drafts');
 
-    // Lock a draft for editing
-    Route::put('/lock/{draftId}', [EmailDraftsController::class, 'lock']);
+    Route::put('{userId}/drafts/{draftId}/restore', [EmailDraftsController::class, 'restore'])
+        ->middleware('permission:restore drafts');
 
-    // Track the history of a draft
-    Route::get('/history/{draftId}', [EmailDraftsController::class, 'trackHistory']);
+    Route::delete('{userId}/drafts/{draftId}/permanently', [EmailDraftsController::class, 'permanentlyDelete'])
+        ->middleware('permission:permanently delete drafts');
+
+    Route::put('{userId}/drafts/{draftId}/trash', [EmailDraftsController::class, 'moveToTrash'])
+        ->middleware('permission:move draft to trash');
+
+    Route::put('email-drafts/status', [EmailDraftsController::class, 'updateStatus'])
+        ->middleware('permission:update drafts status');
+
+    Route::put('lock/{draftId}', [EmailDraftsController::class, 'lock'])
+        ->middleware('permission:lock draft');
+
+    Route::get('history/{draftId}', [EmailDraftsController::class, 'trackHistory'])
+        ->middleware('permission:track draft history');
 });
