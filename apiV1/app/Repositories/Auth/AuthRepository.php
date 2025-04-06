@@ -17,19 +17,21 @@ class AuthRepository implements AuthRepositoryInterface
 {
     public function register(array $data)
     {
+        // Hash password
         $data['password'] = Hash::make($data['password']);
         $user = User::create($data);
-
+    
         // Generate verification token
         $user->email_verification_token = Str::random(60); // Generate token
         $user->save();
-
-        // Assign role if provided
-        if (isset($data['role'])) {
-            $role = Role::findByName($data['role'], 'api');
-            $user->assignRole($role);
-        }
-
+    
+        // Check if a role is provided, otherwise default to 'Customer'
+        $role = isset($data['role']) ? $data['role'] : 'Customer';
+    
+        // Assign the role using 'api' guard
+        $role = Role::findByName($role, 'api'); 
+        $user->assignRole($role);
+    
         return $user;
     }
 
@@ -96,7 +98,7 @@ class AuthRepository implements AuthRepositoryInterface
     protected function sendPasswordResetEmail($user, $token)
     {
         // Send the email using the EmailRepository
-        app(EmailRepositoryInterface::class)->sendEmail($user, 'password_reset_email', ['token' => $token]);
+        //app(EmailRepositoryInterface::class)->sendEmail($user, 'password_reset_email', ['token' => $token]);
     }
 
     public function resetPassword($token, $newPassword)

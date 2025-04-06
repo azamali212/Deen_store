@@ -8,13 +8,16 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use App\Notifications\VerifyEmail;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasApiTokens, HasRoles;
+    use HasFactory, Notifiable, HasApiTokens, HasRoles, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -27,6 +30,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'email_verification_token',
     ];
+
+    protected $guard_name = 'api';
+
+    //protected $dates = ['deleted_at'];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -64,6 +71,16 @@ class User extends Authenticatable implements MustVerifyEmail
             }
         });
     }
+
+    public function roles()
+    {
+        return $this->morphToMany(Role::class, 'model', 'model_has_roles', 'model_id', 'role_id');
+    }
+
+public function permissions()
+{
+    return $this->morphToMany(Permission::class, 'model', 'model_has_permissions', 'model_id', 'permission_id');
+}
 
     public function viewedCategories()
     {

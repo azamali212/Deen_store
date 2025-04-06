@@ -31,7 +31,7 @@ class AuthController extends Controller
             $user = $this->authRepository->register($request->validated());
 
             // Send verification email
-            $user->sendEmailVerificationNotification();
+            //$user->sendEmailVerificationNotification();
 
             return response()->json(['message' => 'Registration successful. Please check your email for verification.', 'user' => $user], 201);
         } catch (\Exception $e) {
@@ -71,8 +71,8 @@ class AuthController extends Controller
 
         // Send the welcome email using the notification
         try {
-            $template = EmailTemplate::getTemplateByName('welcome_email_template'); // Or use any logic to fetch the correct template
-            $user->notify(new WelcomeEmailNotification($user, $template)); // Trigger the notification
+            //$template = EmailTemplate::getTemplateByName('welcome_email_template'); // Or use any logic to fetch the correct template
+            //$user->notify(new WelcomeEmailNotification($user, $template)); // Trigger the notification
 
             return response()->json(['message' => 'Email verified successfully. Welcome email sent.', 'user' => $user]);
         } catch (\Exception $e) {
