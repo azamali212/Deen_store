@@ -22,6 +22,9 @@ return new class extends Migration
             $table->string('confirm_password')->nullable();
             $table->softDeletes();
             $table->string('email_verification_token', 60)->nullable();
+            $table->enum('status', ['active', 'inactive', 'suspended'])->default('inactive');
+            $table->timestamp('last_login_at')->nullable();
+            $table->string('account_type')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });

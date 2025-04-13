@@ -2,6 +2,7 @@
 
 namespace App\Repositories\User;
 
+use App\Jobs\LogUserActionJob;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
@@ -13,8 +14,12 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Str;
 use App\Exceptions\UserCreationException;
+use App\Models\UserLogAction;
 use Exception;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 
 class UserRepository implements UserRepositoryInterface
@@ -348,7 +353,7 @@ class UserRepository implements UserRepositoryInterface
         try {
             // Retrieve all soft-deleted users (where deleted_at is not null)
             $softDeletedUsers = User::onlyTrashed()->with('roles')->get();
-    
+
             if ($softDeletedUsers->isEmpty()) {
                 // If no soft-deleted users found, log and return a response
                 Log::info('No soft-deleted users found.');
@@ -357,7 +362,7 @@ class UserRepository implements UserRepositoryInterface
                     'message' => 'No users found in the recycle bin.',
                 ], 404);
             }
-    
+
             // Prepare user data for the response
             $userData = $softDeletedUsers->map(function ($user) {
                 return [
@@ -367,7 +372,7 @@ class UserRepository implements UserRepositoryInterface
                     'deleted_at' => $user->deleted_at,
                 ];
             });
-    
+
             return response()->json([
                 'success' => true,
                 'message' => 'Soft-deleted users retrieved successfully.',
@@ -376,7 +381,7 @@ class UserRepository implements UserRepositoryInterface
         } catch (Exception $e) {
             // Log the exception details
             Log::error('Error retrieving soft-deleted users: ' . $e->getMessage());
-    
+
             return response()->json([
                 'success' => false,
                 'message' => 'An error occurred while fetching soft-deleted users.',
@@ -522,15 +527,263 @@ class UserRepository implements UserRepositoryInterface
             ], 500);
         }
     }
-    public function searchUsers($criteria, $filters = [], $sort = 'name', $sortDirection = 'asc', $perPage = 15) {}
+    public function searchUsers($criteria, $filters = [], $sort = 'name', $sortDirection = 'asc', $perPage = 15): LengthAwarePaginator
+    {
+        $query = User::query()->with('roles');
 
-    public function changeUserRole($id, $roleName) {}
-    public function assignRolesToUser($id, array $roleNames) {}
-    public function revokeRoleFromUser($id, $roleName) {}
-    public function logUserAction($userId, $action, $details) {}
-    public function activateUser($id) {}
-    public function deactivateUser($id) {}
-    public function batchDeleteUsers(array $userIds) {}
+        // Search logic
+        if (!empty($criteria)) {
+            $query->where(function ($q) use ($criteria) {
+                $q->where('name', 'like', '%' . $criteria . '%')
+                    ->orWhere('email', 'like', '%' . $criteria . '%')
+                    ->orWhere('phone_no', 'like', '%' . $criteria . '%')
+                    ->orWhere('id', 'like', '%' . $criteria . '%');
+            });
+        }
+
+        // Filtering by role (make sure to match exactly)
+        if (!empty($filters['role'])) {
+            $query->whereHas('roles', function ($q) use ($filters) {
+                $q->whereRaw('LOWER(name) = ?', [strtolower($filters['role'])]);
+            });
+        }
+
+        // Filtering by status
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        // Filtering by soft deleted records
+        if (!empty($filters['trashed']) && $filters['trashed'] === true) {
+            $query->onlyTrashed();
+        }
+
+        // Sorting
+        if (in_array($sort, ['name', 'email', 'created_at', 'updated_at'])) {
+            $query->orderBy($sort, $sortDirection);
+        } else {
+            $query->orderBy('name', 'asc');
+        }
+
+        return $query->paginate($perPage);
+    }
+
+    public function changeUserRole($id, $roleName)
+    {
+        // Find the user by ID
+        $user = User::findOrFail($id);
+
+        // Check if the role exists
+        $role = Role::where('name', $roleName)->first();
+        if (!$role) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Role not found'
+            ], 404);
+        }
+
+        // Change the user's role
+        $user->syncRoles([$roleName]);
+
+        // Log the role change
+        Log::info("User role changed", [
+            'user_id' => $user->id,
+            'user_name' => $user->name,
+            'new_role' => $roleName,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'User role changed successfully',
+            'data' => [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'new_role' => $roleName,
+            ]
+        ]);
+    }
+    public function logUserAction($userId, $action, array $details = []): void
+    {
+        LogUserActionJob::dispatch($userId, $action, $details);
+    } // Ensure this is at the top
+
+    public function performLog($userId, $action, array $details = []): UserLogAction
+    {
+        $request = request();
+
+        $ip = $request->ip();
+        $geo = $this->getGeoFromIp($ip);
+
+        $data = [
+            'user_id'       => $userId,
+            'action'        => $action,
+            'event_type'    => $details['event_type'] ?? null,
+            'status'        => $details['status'] ?? 'success',
+            'details'       => $details['details'] ?? null,
+            'ip_address'    => $ip,
+            'user_agent'    => $request->userAgent(),
+            'device_type'   => $details['device_type'] ?? $this->getDeviceType($request),
+            'device_model'  => $details['device_model'] ?? null,
+            'platform'      => $details['platform'] ?? php_uname('s'),
+            'browser'       => $details['browser'] ?? $this->getBrowser($request->userAgent()),
+            'location'      => $geo['location'] ?? null,
+            'latitude'      => $geo['latitude'] ?? null,
+            'longitude'     => $geo['longitude'] ?? null,
+            'route_name'    => $request->route()?->getName(),
+            'url'           => $request->fullUrl(),
+            'performed_by'  => Auth::check() ? Auth::user()->id : $details['performed_by'] ?? null,
+        ];
+
+        if (!empty($details['reference']) && is_object($details['reference'])) {
+            $data['reference_type'] = get_class($details['reference']);
+            $data['reference_id']   = $details['reference']->getKey();
+        }
+
+        return UserLogAction::create($data);
+    }
+
+    public function getGeoFromIp(string $ip): array
+    {
+        try {
+            $response = Http::get("https://ipinfo.io/{$ip}/json");
+
+            if ($response->successful()) {
+                $info = $response->json();
+                $coords = explode(',', $info['loc'] ?? '');
+
+                return [
+                    'location' => is_array($info) ? $info['city'] . ', ' . $info['country'] : null,
+                    'latitude' => $coords[0] ?? null,
+                    'longitude' => $coords[1] ?? null,
+                ];
+            }
+        } catch (Exception $e) {
+            // You can log the exception or ignore
+        }
+
+        return [];
+    }
+
+    public function getDeviceType($request): ?string
+    {
+        $agent = $request->header('User-Agent');
+        if (!$agent) return null;
+
+        // Loop through the array and check if any device type is present in the user-agent
+        $mobileDevices = ['Mobile', 'Android', 'iPhone'];
+        $tabletDevices = ['iPad', 'Tablet'];
+
+        foreach ($mobileDevices as $device) {
+            if (str_contains($agent, $device)) {
+                return 'mobile';
+            }
+        }
+
+        foreach ($tabletDevices as $device) {
+            if (str_contains($agent, $device)) {
+                return 'tablet';
+            }
+        }
+
+        return 'desktop';
+    }
+
+    public function getBrowser($userAgent): ?string
+    {
+        if (str_contains($userAgent, 'Firefox')) return 'Firefox';
+        if (str_contains($userAgent, 'Chrome')) return 'Chrome';
+        if (str_contains($userAgent, 'Safari') && !str_contains($userAgent, 'Chrome')) return 'Safari';
+        if (str_contains($userAgent, 'Edge')) return 'Edge';
+        if (str_contains($userAgent, 'Opera') || str_contains($userAgent, 'OPR')) return 'Opera';
+        if (str_contains($userAgent, 'MSIE') || str_contains($userAgent, 'Trident')) return 'Internet Explorer';
+
+        return 'Unknown';
+    }
+
+
+    public function activateUser(string $id): bool
+    {
+        try {
+            $user = User::findOrFail($id);
+
+            if ($user->status === 'active') {
+                Log::info("User [$id] is already active.");
+                return false;
+            }
+
+            $user->status = 'active';
+            $user->email_verified_at = now(); // Set email_verified_at to the current time
+            $user->last_login_at = now(); // Set last_login_at to the current time
+            $user->save(); // Save the changes
+
+            Log::info("User [$id] activated successfully.");
+
+            return true;
+        } catch (ModelNotFoundException $e) {
+            Log::error("User with ID [$id] not found.");
+            throw new Exception("User not found.", 404);
+        } catch (Exception $e) {
+            Log::error("Error activating user [$id]: " . $e->getMessage());
+            throw new Exception("Failed to activate user.", 500);
+        }
+    }
+    public function deactivateUser(string $id): bool
+    {
+        try {
+            $user = User::findOrFail($id);
+
+            if ($user->status === 'inactive') {
+                Log::info("User [$id] is already inactive.");
+                return false;
+            }
+
+            $user->status = 'inactive';
+            $user->save(); // Save the changes
+
+            Log::info("User [$id] deactivated successfully.");
+
+            return true;
+        } catch (ModelNotFoundException $e) {
+            Log::error("User with ID [$id] not found.");
+            throw new Exception("User not found.", 404);
+        } catch (Exception $e) {
+            Log::error("Error deactivating user [$id]: " . $e->getMessage());
+            throw new Exception("Failed to deactivate user.", 500);
+        }
+    }
+    // Repository Method
+    // Repository
+    public function batchDeleteUsers(array $userIds)
+    {
+        DB::beginTransaction();
+
+        try {
+            // Validate user IDs
+            $users = User::whereIn('id', $userIds)->get();
+            if ($users->isEmpty()) {
+                return 0;  // Return 0 if no users were found
+            }
+
+            // Check if any of the users have restricted roles
+            foreach ($users as $user) {
+                if ($user->hasRole(['Admin', 'Super Admin'])) {
+                    return 0;  // Return 0 if any user has restricted roles
+                }
+            }
+
+            // Soft delete users and return the count of deleted users
+            $deletedCount = User::destroy($userIds);
+
+            DB::commit();
+
+            // Return the count of deleted users
+            return $deletedCount;
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error deleting users: ' . $e->getMessage());
+            return 0;  // Return 0 in case of an error
+        }
+    }
 
     /**
      * Batch restore users (from soft delete) with validation and optional logging.
@@ -538,16 +791,93 @@ class UserRepository implements UserRepositoryInterface
      * @param array $userIds
      * @return int
      */
-    public function batchRestoreUsers(array $userIds) {}
+    public function batchRestoreUsers(array $userIds)
+    {
+        DB::beginTransaction();
 
+        try {
+            Log::info('Attempting to restore users with IDs: ', $userIds);  // Log the user IDs
+
+            // Get the trashed users using onlyTrashed
+            $users = User::onlyTrashed()->whereIn('id', $userIds)->get();
+
+            // If no trashed users are found, return 0
+            if ($users->isEmpty()) {
+                Log::info('No users found with the provided IDs in the soft deleted state.');
+                return 0;  // Return 0 if no users were found
+            }
+
+            // Restore users and count how many were restored
+            $restoredCount = 0;
+            foreach ($users as $user) {
+                if ($user->restore()) {
+                    $restoredCount++;
+                }
+            }
+
+            DB::commit();
+
+            // Return the count of restored users
+            return $restoredCount;
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error restoring users: ' . $e->getMessage());
+            return 0;  // Return 0 in case of an error
+        }
+    }
     /**
      * Batch force delete users (permanent deletion) with cascading deletes and auditing.
      *
      * @param array $userIds
      * @return int
      */
-    public function batchForceDeleteUsers(array $userIds) {}
-    public function getInactiveUsers($days) {}
+    public function batchForceDeleteUsers(array $userIds)
+    {
+        DB::beginTransaction();
+
+        try {
+            // Validate user IDs
+            $users = User::withTrashed()->whereIn('id', $userIds)->get();
+            if ($users->isEmpty()) {
+                return 0;  // Return 0 if no users were found
+            }
+
+            // Check if any of the users have restricted roles
+            foreach ($users as $user) {
+                if ($user->hasRole(['Admin', 'Super Admin'])) {
+                    return 0;  // Return 0 if any user has restricted roles
+                }
+            }
+
+            // Force delete users and return the count of deleted users
+            $deletedCount = User::onlyTrashed()->whereIn('id', $userIds)->forceDelete();
+
+            DB::commit();
+
+            // Return the count of deleted users
+            return $deletedCount;
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error force deleting users: ' . $e->getMessage());
+            return 0;  // Return 0 in case of an error
+        }
+    }
+    public function getInactiveUsers($days)
+    {
+        try {
+            // Calculate the date before $days from today
+            $inactiveSince = now()->subDays($days);
+
+            // Retrieve users who have been soft deleted before $days ago
+            return User::onlyTrashed()
+                ->where('deleted_at', '<', $inactiveSince)
+                ->orderBy('deleted_at', 'desc') // Sorting to prioritize older deleted users
+                ->get();
+        } catch (Exception $e) {
+            Log::error('Error fetching inactive users: ' . $e->getMessage());
+            return collect(); // Return an empty collection in case of an error
+        }
+    }
 
     /**
      * Retrieve users based on advanced criteria like account age, last login, etc.
@@ -555,7 +885,33 @@ class UserRepository implements UserRepositoryInterface
      * @param array $advancedCriteria
      * @return \Illuminate\Database\Eloquent\Collection
      */
-    public function getUsersByAdvancedCriteria(array $advancedCriteria) {}
+    public function getUsersByAdvancedCriteria(array $advancedCriteria)
+    {
+        try {
+            $query = User::query(); // Start with the base User model
+
+            // Loop through criteria and build the query dynamically
+            foreach ($advancedCriteria as $key => $value) {
+                if ($key === 'account_type') {
+                    $query->where('created_at', '<', now()->subDays($value)); // Filter by account age
+                }
+                if ($key === 'last_login_at') {
+                    $query->where('last_login_at', '>=', now()->subDays($value)); // Filter by last login
+                }
+                if ($key === 'role') {
+                    $query->whereHas('roles', function ($query) use ($value) {
+                        $query->where('name', $value); // Filter by role name
+                    });
+                }
+                // Add additional filters as necessary
+            }
+
+            return $query->get(); // Execute and return the result
+        } catch (Exception $e) {
+            Log::error('Error fetching users by advanced criteria: ' . $e->getMessage());
+            return collect(); // Return an empty collection in case of an error
+        }
+    }
 
     /**
      * Get users with certain role permissions.
@@ -563,7 +919,18 @@ class UserRepository implements UserRepositoryInterface
      * @param string $permission
      * @return \Illuminate\Database\Eloquent\Collection
      */
-    public function getUsersWithPermission($permission) {}
+    public function getUsersWithPermission($permission) {
+        try {
+            return User::whereHas('permissions', function ($query) use ($permission) {
+                $query->where('name', $permission); // Filter by permission name
+            })
+            ->with('permissions') // Eager load permissions for each user to avoid N+1 query problem
+            ->get();
+        } catch (Exception $e) {
+            Log::error('Error fetching users with permission: ' . $e->getMessage());
+            return collect(); // Return an empty collection in case of an error
+        }
+    }
 
     /**
      * Bulk update users' statuses (e.g., activate/deactivate) with background processing.
@@ -572,7 +939,26 @@ class UserRepository implements UserRepositoryInterface
      * @param string $status
      * @return int
      */
-    public function bulkUpdateUserStatus(array $userIds, $status) {}
+    public function bulkUpdateUserStatus(array $userIds, $status) {
+        try {
+            // Start transaction to ensure data consistency
+            DB::beginTransaction();
+    
+            // Bulk update user status
+            $updatedCount = User::whereIn('id', $userIds)
+                ->update(['status' => $status]);
+    
+            // Commit the transaction
+            DB::commit();
+    
+            return $updatedCount; // Return the number of users updated
+        } catch (Exception $e) {
+            // Rollback transaction in case of an error
+            DB::rollBack();
+            Log::error('Error bulk updating user statuses: ' . $e->getMessage());
+            return 0; // Return 0 if no updates were made
+        }
+    }
 
     /**
      * Cache the results of common queries for performance optimization.
@@ -582,7 +968,17 @@ class UserRepository implements UserRepositoryInterface
      * @param int $ttl
      * @return mixed
      */
-    public function cacheQueryResult($cacheKey, callable $queryCallback, $ttl = 60) {}
+    public function cacheQueryResult($cacheKey, callable $queryCallback, $ttl = 60) {
+        try {
+            // Try to fetch the data from the cache
+            return Cache::remember($cacheKey, $ttl, function () use ($queryCallback) {
+                return $queryCallback(); // Execute the query and return the result
+            });
+        } catch (Exception $e) {
+            Log::error('Error caching query result: ' . $e->getMessage());
+            return null; // Return null in case of an error
+        }
+    }
 
     /**
      * Handle complex user permission assignments with caching and validation.
@@ -591,5 +987,35 @@ class UserRepository implements UserRepositoryInterface
      * @param array $permissions
      * @return \App\Models\User
      */
-    public function assignPermissionsToUser($userId, array $permissions) {}
+    public function assignPermissionsToUser($userId, array $permissions) {
+        try {
+            // Begin a database transaction to ensure data consistency
+            DB::beginTransaction();
+    
+            // Fetch the user from the database
+            $user = User::findOrFail($userId);
+    
+            // Validate and assign the permissions
+            $validPermissions = Permission::whereIn('name', $permissions)->get();
+            if ($validPermissions->count() !== count($permissions)) {
+                throw new Exception('One or more permissions are invalid.');
+            }
+    
+            // Sync the permissions for the user
+            $user->permissions()->sync($validPermissions->pluck('id'));
+    
+            // Commit the transaction
+            DB::commit();
+    
+            // Cache the updated permissions for future use
+            Cache::forget("user_permissions_{$userId}");
+            Cache::put("user_permissions_{$userId}", $validPermissions);
+    
+            return $user; // Return the updated user
+        } catch (Exception $e) {
+            DB::rollBack(); // Rollback if any error occurs
+            Log::error('Error assigning permissions to user: ' . $e->getMessage());
+            return null; // Return null in case of an error
+        }
+    }
 }

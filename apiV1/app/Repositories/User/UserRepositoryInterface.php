@@ -2,6 +2,7 @@
 
 namespace App\Repositories\User;
 
+use App\Models\UserLogAction;
 use Illuminate\Http\JsonResponse;
 
 interface UserRepositoryInterface
@@ -84,33 +85,13 @@ interface UserRepositoryInterface
      */
     public function changeUserRole($id, $roleName);
 
-    /**
-     * Assign multiple roles to a user, checking for duplicates and handling cascading updates.
-     *
-     * @param int $id
-     * @param array $roleNames
-     * @return \App\Models\User
-     */
-    public function assignRolesToUser($id, array $roleNames);
+  
+    public function logUserAction($userId, $action, array $details = []): void;
+    public function performLog($userId, $action, array $details = []): UserLogAction;
 
-    /**
-     * Revoke a specific role from a user with logging.
-     *
-     * @param int $id
-     * @param string $roleName
-     * @return \App\Models\User
-     */
-    public function revokeRoleFromUser($id, $roleName);
-
-    /**
-     * Log user actions (e.g., login, profile update), using advanced event-driven logging.
-     *
-     * @param int $userId
-     * @param string $action
-     * @param string $details
-     * @return bool
-     */
-    public function logUserAction($userId, $action, $details);
+    public function getGeoFromIp(string $ip): array;
+    public function getDeviceType($request): ?string;
+    public function getBrowser($userAgent): ?string;
 
     /**
      * Activate a user (set active status), including notifications.
@@ -118,7 +99,7 @@ interface UserRepositoryInterface
      * @param int $id
      * @return \App\Models\User
      */
-    public function activateUser($id);
+    public function activateUser(string $id):bool;
 
     /**
      * Deactivate a user (set inactive status), with potential additional logic like session invalidation.
@@ -126,7 +107,7 @@ interface UserRepositoryInterface
      * @param int $id
      * @return \App\Models\User
      */
-    public function deactivateUser($id);
+    public function deactivateUser(string $id): bool;
 
     /**
      * Batch delete users (soft delete) based on given criteria with validation.

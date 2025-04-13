@@ -12,11 +12,19 @@ use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use App\Jobs\LogUserActionJob;
+use App\Repositories\User\UserRepositoryInterface;
 
 class AuthRepository implements AuthRepositoryInterface
 {
+    protected $userRepository;
+    public function __construct(UserRepositoryInterface $userRepository)
+    {
+        $this->userRepository = $userRepository;
+    }
     public function register(array $data)
     {
+        $request = request();
         // Hash password
         $data['password'] = Hash::make($data['password']);
         $user = User::create($data);
@@ -31,6 +39,22 @@ class AuthRepository implements AuthRepositoryInterface
         // Assign the role using 'api' guard
         $role = Role::findByName($role, 'api'); 
         $user->assignRole($role);
+
+        $deviceDetial = $this->userRepository->getDeviceType($request);
+        $browserDetial = $this->userRepository->getBrowser($request);
+        LogUserActionJob::dispatch($user->id, 'user_registered', [
+            'event_type'    => 'registration',
+            'status'        => 'success',
+            'details'       => 'User successfully registered and assigned role: ' . $role->name,
+            'reference'     => $user,
+            'ip_address'    => $request->ip(),
+            'user_agent'    => $request->userAgent(),
+            'device_type'   => $deviceDetial,
+            'browser'       => $browserDetial,
+            'platform'      => php_uname('s'),
+            'route_name'    => $request->route()?->getName(),
+            'url'           => $request->fullUrl(),
+        ]);
     
         return $user;
     }
@@ -45,8 +69,19 @@ class AuthRepository implements AuthRepositoryInterface
     
         // Explicitly type-hint $user as User
         if ($user instanceof User) {
+            $user->update([
+                'last_login_at' => now(),
+            ]);
+            $user->refresh(); 
             // Assign the token to the $token variable
             $token = $user->createToken('device_name')->plainTextToken;
+
+            LogUserActionJob::dispatch($user->id, 'user_registered', [
+                'event_type' => 'registration',
+                'status' => 'success',
+                'details' => 'User successfully registered and assigned role: '  .$user->getRoleNames(),
+                'reference' => $user,
+            ]);
     
             return response()->json([
                 'message' => 'Login successful',
