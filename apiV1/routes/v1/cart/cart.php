@@ -15,7 +15,7 @@ Route::middleware(['auth:api', 'cart.security'])->group(function () {
 
             // Add to cart with validation middleware
             Route::post('/add', [CartController::class, 'addToCart'])
-                  ->middleware(['permission:add to cart', 'validate.cart']);
+                  ->middleware(['permission:add to cart']);
 
             // Update cart item
             Route::put('/{cart_item_id}', [CartController::class, 'updateCart'])
@@ -105,4 +105,5 @@ Route::middleware(['auth:api', 'cart.security'])->group(function () {
             Route::get('/share/{cart_id}', [CartController::class, 'shareCart'])
                   ->middleware(['permission:share cart', 'signed']);
       });
+      Route::post('/cart/checkout', [CartController::class, 'checkout']);
 });

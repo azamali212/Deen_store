@@ -39,7 +39,7 @@ class Order extends Model
         $now = Carbon::now();
         // Ensure delayed_at is a Carbon instance
         $delayedAt = Carbon::parse($this->delayed_at);
-    
+
         // Assuming that a delayed order is one that is more than an hour old
         return $delayedAt->lessThan($now);
     }
@@ -60,11 +60,15 @@ class Order extends Model
         $this->save();
     }
 
+    public function payment()
+    {
+        return $this->hasOne(Payment::class);
+    }
     public function customer()
     {
         return $this->belongsTo(Customer::class, 'customer_id');
     }
-    
+
     public function admin()
     {
         return $this->belongsTo(Admin::class);
@@ -105,5 +109,12 @@ class Order extends Model
     public function tracking()
     {
         return $this->hasMany(Order_Tracking::class);
+    }
+
+    protected static function booted()
+    {
+        static::creating(function ($order) {
+            $order->order_number = 'ORD-' . strtoupper(uniqid());
+        });
     }
 }

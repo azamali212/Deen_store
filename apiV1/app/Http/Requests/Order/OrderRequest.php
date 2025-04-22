@@ -43,6 +43,14 @@ class OrderRequest extends FormRequest
             'tracking_number'  => 'nullable|string|unique:orders,tracking_number',
             'shipping_address' => 'required|string',
             'billing_address'  => 'required|string',
+
+            'order_items' => 'required|array',
+            'order_items.*.product_id' => 'required|integer',
+            'order_items.*.product_name' => 'required|string',
+            'order_items.*.price' => 'required|numeric',
+            'order_items.*.discount_price' => 'nullable|numeric',
+            'order_items.*.quantity' => 'required|integer',
+            'order_items.*.total_price' => 'required|numeric',
         ];
     }
 }

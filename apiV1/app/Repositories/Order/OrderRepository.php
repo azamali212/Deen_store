@@ -56,16 +56,22 @@ class OrderRepository implements OrderRepositoryInterface
     public function createOrder(array $data): Order
     {
         return DB::transaction(function () use ($data) {
+            $orderItemsData = $data['order_items'] ?? [];
+            unset($data['order_items']); // Remove order items from main data
+    
+            // Create the main order
             $order = Order::create($data);
+    
+            // Fire order created event
             event(new OrderActionEvent($order, 'created'));
-
-            if (isset($data['order_items']) && is_array($data['order_items'])) {
-                foreach ($data['order_items'] as $item) {
-                    $order->orderItems()->create($item);
-                }
+    
+            // Create order items if present
+            if (!empty($orderItemsData)) {
+                $order->orderItems()->createMany($orderItemsData);
             }
-
-            return $order;
+    
+            // Return with orderItems loaded
+            return $order->load('orderItems');
         });
     }
 
@@ -137,16 +143,16 @@ class OrderRepository implements OrderRepositoryInterface
     {
         $orders = $this->getDelayedOrders();
         \Log::info('Checking delayed orders for escalation...');
-        
+
         if ($orders->isEmpty()) {
             \Log::info('No delayed orders found for escalation.');
             return false; // Exit if no orders are found
         }
-    
+
         $escalated = false;
         foreach ($orders as $order) {
             \Log::info('Checking order:', ['order' => $order->toArray()]);
-            
+
             if ($order->isDelayed()) {
                 \Log::info('Escalating order:', ['order_number' => $order->order_number]);
                 $this->markOrderAsDelayed($order);
@@ -157,13 +163,13 @@ class OrderRepository implements OrderRepositoryInterface
                 \Log::info('Order is not delayed enough for escalation:', ['order_number' => $order->order_number]);
             }
         }
-    
+
         if ($escalated) {
             \Log::info('Delayed orders have been escalated.');
         } else {
             \Log::info('No orders were escalated.');
         }
-    
+
         return $escalated;
     }
     public function getHighValueOrders(): Collection
@@ -196,26 +202,26 @@ class OrderRepository implements OrderRepositoryInterface
     public function detectFraudulentOrder(int $orderId): bool
     {
         $order = Order::findOrFail($orderId);
-    
+
         // Check if the order has an associated customer
         $customer = $order->customer;
         if (!$customer) {
             Log::warning("Order ID: {$orderId} does not have a valid customer.");
             return false; // Or handle this case appropriately
         }
-    
+
         // Business logic for detecting fraudulent orders
         $isHighRiskCustomer = $customer->risk_level === 'high';
         $isLargeOrder = $order->total_amount > 5000;
         $isFraudulentHistory = $customer->orders()->where('is_fraudulent', true)->exists();
         $isSuspiciousAddress = $this->isSuspiciousAddress($order->shipping_address);
-    
+
         // Add business logic to determine if the order is fraudulent
         if ($isLargeOrder && $isHighRiskCustomer && ($isFraudulentHistory || $isSuspiciousAddress)) {
             Log::warning("Fraudulent order detected for Order ID: {$order->id}");
             return true;
         }
-    
+
         return false;
     }
 
@@ -229,7 +235,7 @@ class OrderRepository implements OrderRepositoryInterface
     {
         // Example: Check if the address contains certain patterns or suspicious keywords
         $suspiciousKeywords = ['unknown', 'invalid', 'suspicious'];
-        
+
         foreach ($suspiciousKeywords as $keyword) {
             if (strpos(strtolower($address), $keyword) !== false) {
                 return true;

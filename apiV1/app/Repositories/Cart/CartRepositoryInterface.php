@@ -2,6 +2,8 @@
 
 namespace App\Repositories\Cart;
 
+use App\Models\User;
+
 interface CartRepositoryInterface
 {
     // Retrieve the cart for a user (or guest via session)
@@ -62,4 +64,6 @@ interface CartRepositoryInterface
 
     // Handle split payments or installment payments in the cart
     public function handleSplitPayments($user_id, $payment_details);
+
+    public function checkout(User $user, string $paymentMethodId): bool;
 }

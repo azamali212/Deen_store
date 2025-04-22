@@ -8,6 +8,7 @@ use App\Models\Cart;
 use App\Models\User;
 use App\Notifications\CartReminderNotification;
 use App\Repositories\Cart\CartRepositoryInterface;
+use Auth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Exception;
@@ -335,5 +336,24 @@ class CartController extends Controller
             'message' => 'Abandoned cart reminders sent successfully.',
             'carts' => $abandonedCarts
         ], 200);
+    }
+
+    public function checkout(Request $request)
+    {
+        $user = Auth::user(); // Get the logged-in user
+        $paymentMethodId = $request->input('payment_method_id'); // Assuming you get the payment method ID in the request
+
+        try {
+            $checkoutStatus = $this->cartRepo->checkout($user, $paymentMethodId);
+
+            if ($checkoutStatus) {
+                return response()->json(['message' => 'Checkout successful'], 200);
+            }
+
+            return response()->json(['message' => 'Cart is empty, cannot proceed with checkout'], 400);
+        } catch (Exception $e) {
+            // Handle any exceptions, like payment failures, etc.
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 }

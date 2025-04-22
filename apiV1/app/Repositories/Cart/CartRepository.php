@@ -7,9 +7,13 @@ use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\Coupon;
+use App\Models\Order;
+use App\Models\User;
 use App\Models\Wishlist;
 use App\Models\WishlistItem;
 use App\Notifications\CartReminderNotification;
+use App\Repositories\Order\OrderRepositoryInterface;
+use App\Repositories\PaymentSystem\StripePaymentRepositoryInterface;
 use Exception;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +22,13 @@ use Illuminate\Support\Facades\Notification;
 
 class CartRepository implements CartRepositoryInterface
 {
+    protected StripePaymentRepositoryInterface $stripePaymentRepository;
+    protected OrderRepositoryInterface $orderRepository;
+    public function __construct(StripePaymentRepositoryInterface $stripePaymentRepository, OrderRepositoryInterface $orderRepository)
+    {
+        $this->stripePaymentRepository = $stripePaymentRepository;
+        $this->orderRepository = $orderRepository;
+    }
     public function getCart($user_id, $cart_token = null)
     {
         // Using cache to avoid repeated DB hits
@@ -33,15 +44,17 @@ class CartRepository implements CartRepositoryInterface
     {
         DB::beginTransaction();
         try {
-            $cart_token = \Str::random(32);
             $cart = Cart::firstOrCreate(
-                ['user_id' => $user_id, 'cart_token' => $cart_token],
-                ['total_price' => 0, 'total_quantity' => 0]
+                ['user_id' => $user_id],
+                [
+                    'cart_token' => \Str::random(32),
+                    'total_price' => 0,
+                    'total_quantity' => 0
+                ]
             );
-
+    
             $product = Product::findOrFail($product_id);
-
-            // Fetch the existing CartItem or create a new one
+    
             $cartItem = CartItem::updateOrCreate(
                 [
                     'cart_id' => $cart->id,
@@ -53,16 +66,15 @@ class CartRepository implements CartRepositoryInterface
                     'attributes' => json_encode($attributes),
                 ]
             );
-
-            // Manually update the quantity (add new quantity to existing one)
+    
             $cartItem->quantity += $quantity;
             $cartItem->save();
-
+    
             $this->updateCartTotals($cart);
-
+    
             event(new CartAbandonedEvent($cart));
             Notification::send($cart->user, new CartReminderNotification($cart));
-
+    
             DB::commit();
             return $cartItem;
         } catch (Exception $e) {
@@ -114,13 +126,13 @@ class CartRepository implements CartRepositoryInterface
         $cart = Cart::where('user_id', $user_id)->first();
 
         if (!$cart) {
-            throw new \Exception('Cart not found');
+            throw new Exception('Cart not found');
         }
 
         // Ensure the cart has items before trying to delete
         $cartItems = $cart->cartItems()->get(); // Get all cart items
         if ($cartItems->isEmpty()) {
-            throw new \Exception('No items found in cart');
+            throw new Exception('No items found in cart');
         }
 
         // Delete all cart items associated with the cart
@@ -194,14 +206,14 @@ class CartRepository implements CartRepositoryInterface
         $guestCart = Cart::where('cart_token', $cart_token)->first();
 
         if (!$guestCart) {
-            throw new \Exception('Guest cart not found');
+            throw new Exception('Guest cart not found');
         }
 
         // Merge guest cart items to the user's cart
         $userCart = Cart::where('user_id', $user_id)->first();
 
         if (!$userCart) {
-            throw new \Exception('User cart not found');
+            throw new Exception('User cart not found');
         }
 
         // Assuming Cart has a relation `cartItems`
@@ -222,12 +234,12 @@ class CartRepository implements CartRepositoryInterface
         $cartItem = CartItem::whereHas('cart', function ($query) use ($user_id) {
             $query->where('user_id', $user_id);
         })->findOrFail($cart_item_id);
-    
+
         // Check if the user already has a wishlist, if not, create one
         $wishlist = Wishlist::firstOrCreate([
             'user_id' => $user_id,
         ]);
-    
+
         // Create a new WishlistItem and move it to the wishlist
         $wishlistItem = new WishlistItem();
         $wishlistItem->wishlist_id = $wishlist->id;  // Assign the wishlist ID
@@ -235,31 +247,31 @@ class CartRepository implements CartRepositoryInterface
         $wishlistItem->product_id = $cartItem->product_id;  // Store the product ID
         $wishlistItem->quantity = $cartItem->quantity;  // If you want to move the quantity to the wishlist
         $wishlistItem->save();  // Save the new WishlistItem
-    
+
         // Delete the CartItem after moving it to the wishlist
         $cartItem->delete();
-    
+
         return response()->json(['message' => 'Item successfully moved to wishlist'], 200);
     }
 
-   
-public function recoverAbandonedCarts($userId)
-{
-    $abandonedCarts = Cart::where('status', 'abandoned')
-        ->where('updated_at', '<', now()->subDays(3))
-        ->where('user_id', $userId)
-        ->get();
 
-    foreach ($abandonedCarts as $cart) {
-        Log::info("Sending abandoned cart reminder to user: " . $cart->user_id);
+    public function recoverAbandonedCarts($userId)
+    {
+        $abandonedCarts = Cart::where('status', 'abandoned')
+            ->where('updated_at', '<', now()->subDays(3))
+            ->where('user_id', $userId)
+            ->get();
 
-        // Send email and notification
-        event(new CartAbandonedEvent($cart));
-        Notification::send($cart->user, new CartReminderNotification($cart));
+        foreach ($abandonedCarts as $cart) {
+            Log::info("Sending abandoned cart reminder to user: " . $cart->user_id);
+
+            // Send email and notification
+            event(new CartAbandonedEvent($cart));
+            Notification::send($cart->user, new CartReminderNotification($cart));
+        }
+
+        return $abandonedCarts; // Return the carts
     }
-
-    return $abandonedCarts; // Return the carts
-}
 
     // 🚀 New Features
 
@@ -274,7 +286,7 @@ public function recoverAbandonedCarts($userId)
 
         foreach ($cart->cartItems as $item) {
             if ($item->product->stock < $item->quantity) {
-                throw new \Exception("Product {$item->product->name} is out of stock.");
+                throw new Exception("Product {$item->product->name} is out of stock.");
             }
         }
 
@@ -333,5 +345,87 @@ public function recoverAbandonedCarts($userId)
     private function getExchangeRate($currency)
     {
         return $currency === 'EUR' ? 0.85 : 1.00; // Example: 1 USD = 0.85 EUR
+    }
+
+    public function checkout(User $user, string $paymentMethodId): bool
+    {
+        DB::beginTransaction();
+
+        try {
+            Log::info('User ID: ' . $user->id);
+            $cart = Cart::with(['cartItems.product', 'cartItems.variant'])->where('user_id', $user->id)->first();
+            Log::info('Cart: ', [$cart]);
+            Log::info('Cart Items Count: ' . optional($cart)->cartItems->count());
+
+            if (!$cart || $cart->cartItems->isEmpty()) {
+                throw new Exception('Your cart is empty.');
+            }
+
+            $amountInCents = $cart->cartItems->sum(function ($item) {
+                return $item->price * $item->quantity * 100;
+            });
+
+            if ($amountInCents <= 0) {
+                throw new Exception('Invalid total amount.');
+            }
+
+            // 3. Create Stripe customer if not already
+            if (!$user->hasStripeId()) {
+                $user->createAsStripeCustomer();
+            }
+
+            // 4. Attach and validate payment method
+            try {
+                $this->stripePaymentRepository->createOrAttachPaymentMethod($user, null, $paymentMethodId);
+            } catch (Exception $e) {
+                // Handle the error if the payment method is not reusable
+                if ($e->getMessage() == 'This payment method is not reusable. Please provide a new payment method.') {
+                    throw new Exception('This payment method is not reusable. Please provide a new payment method.');
+                }
+                throw new Exception('Unable to process payment method: ' . $e->getMessage());
+            }
+
+            $chargeResponse = $this->stripePaymentRepository->chargeCustomer($user, $amountInCents, 'usd', $paymentMethodId);
+
+            if ($chargeResponse['status'] !== 'succeeded') {
+                throw new Exception('Payment failed. Please try again.');
+            }
+
+            $orderData = [
+                'user_id' => $user->id,
+                'order_number' => 'ORD-' . strtoupper(uniqid()),
+                'grand_total' => $amountInCents / 100,
+                'order_status' => 'processing',
+                'payment_status' => 'paid',
+                'shipping_address' => $cart->shipping_address ?? 'N/A',
+                'billing_address' => $cart->billing_address ?? 'N/A',
+                'order_items' => $cart->cartItems->map(function ($item) {
+                    return [
+                        'product_id' => $item->product_id,
+                        'variant_id' => $item->variant_id,
+                        'quantity' => $item->quantity,
+                        'price' => $item->price,
+                        'attributes' => $item->attributes,
+                        'product_name' => $item->product->name,
+                        'total_price' => $item->price * $item->quantity,
+                    ];
+                })->toArray(),
+            ];
+
+            // 🎯 Just call the order repository
+            $this->orderRepository->createOrder($orderData);
+
+            // 🧹 Clear cart
+            $cart->cartItems()->delete();
+
+            DB::commit();
+
+            return true;
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Checkout failed: ' . $e->getMessage());
+
+            throw new Exception('Checkout failed: ' . $e->getMessage());
+        }
     }
 }

@@ -18,6 +18,8 @@ use App\Repositories\Inventory\InventoryRepository;
 use App\Repositories\Inventory\InventoryRepositoryInterface;
 use App\Repositories\Order\OrderRepository;
 use App\Repositories\Order\OrderRepositoryInterface;
+use App\Repositories\PaymentSystem\StripePaymentRepository;
+use App\Repositories\PaymentSystem\StripePaymentRepositoryInterface;
 use App\Repositories\PermissionSettings\Permission\PermissionRepository;
 use App\Repositories\PermissionSettings\Permission\PermissionRepositoryInterface;
 use App\Repositories\PermissionSettings\Role\RoleRepository;
@@ -85,6 +87,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(OrderRepositoryInterface::class, OrderRepository::class);
         $this->app->bind(InventoryRepositoryInterface::class, InventoryRepository::class);
         $this->app->bind(SupplierRepositoryInterface::class, SupplierRepository::class);
+        $this->app->bind(StripePaymentRepositoryInterface::class,StripePaymentRepository::class);
 
         
         //Validations Services

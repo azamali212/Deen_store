@@ -35,6 +35,10 @@ class OrderController extends Controller
     {
         $data = $request->validated();
         $order = $this->orderRepository->createOrder($data);
+    
+        // Eager load orderItems so they appear in the response
+        $order->load('orderItems');
+    
         return response()->json($order);
     }
 

@@ -31,6 +31,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'email_verification_token',
         'last_login_at', 
+        'default_payment_method',
     ];
 
     protected $guard_name = 'api';
