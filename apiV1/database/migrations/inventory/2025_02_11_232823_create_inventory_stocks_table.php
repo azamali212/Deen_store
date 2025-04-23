@@ -13,11 +13,13 @@ return new class extends Migration
     {
         Schema::create('inventory_stocks', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('product_id')->constrained()->onDelete('cascade');
+            $table->unsignedBigInteger('product_id');
             $table->integer('quantity')->default(0);
             $table->integer('auto_restock_threshold')->default(10);
-            $table->foreignId('warehouse_id')->nullable();
+            $table->unsignedBigInteger('warehouse_id')->nullable();
             $table->timestamps();
+
+            $table->engine = 'InnoDB';
         });
     }
 

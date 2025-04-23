@@ -13,10 +13,19 @@ return new class extends Migration
     {
         Schema::create('order_tracking', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('order_id')->nullable();
-            $table->string('status'); // e.g., "Order Packed", "Shipped", "Out for Delivery"
-            $table->text('location')->nullable();
-            $table->timestamp('updated_at')->useCurrent();
+
+            $table->unsignedBigInteger('order_id');
+            $table->string('status'); // e.g., "Packed", "Shipped", "Delivered"
+            $table->text('location')->nullable(); // current location / warehouse / hub
+            $table->decimal('latitude', 10, 7)->nullable(); // Geo-coordinates
+            $table->decimal('longitude', 10, 7)->nullable();
+
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->string('source')->nullable(); // e.g., "CourierAPI", "AdminPanel", "DriverApp"
+            $table->text('notes')->nullable(); // internal notes (optional)
+
+            $table->timestamp('tracked_at')->useCurrent(); // precise tracking timestamp
+            $table->timestamps(); // created_at & updated_at
         });
     }
 

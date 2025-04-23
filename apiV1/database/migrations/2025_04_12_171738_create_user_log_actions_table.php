@@ -34,7 +34,7 @@ return new class extends Migration
             $table->string('route_name')->nullable(); // optional: name of route
             $table->string('url')->nullable(); // full URL
 
-            $table->foreignUlid('performed_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->unsignedBigInteger('performed_by')->nullable();
             $table->string('reference_type')->nullable();
             $table->string('reference_id')->nullable();
 

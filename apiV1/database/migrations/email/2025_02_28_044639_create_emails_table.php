@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('emails', function (Blueprint $table) {
             $table->id();
-            $table->foreignUlid('sender_id')->constrained('users')->onDelete('cascade');
-            $table->foreignUlid('receiver_id')->constrained('users')->onDelete('cascade');
+            $table->string('sender_id');
+            $table->string('receiver_id');
             $table->string('from_email')->nullable()->index(); // Sender email address
             $table->string('to_email')->nullable()->index();   // Receiver email address
             $table->string('subject');

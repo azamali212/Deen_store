@@ -45,6 +45,7 @@ return new class extends Migration
      */
     public function down(): void
     {
+        // Drop the orders table
         Schema::dropIfExists('orders');
     }
 };

@@ -16,6 +16,8 @@ use App\Repositories\Email\EmailRepository;
 use App\Repositories\Email\EmailRepositoryInterface;
 use App\Repositories\Inventory\InventoryRepository;
 use App\Repositories\Inventory\InventoryRepositoryInterface;
+use App\Repositories\Order\Order_tracking\OrderTrackingRepository;
+use App\Repositories\Order\Order_tracking\OrderTrackingRepositoryInterface;
 use App\Repositories\Order\OrderRepository;
 use App\Repositories\Order\OrderRepositoryInterface;
 use App\Repositories\PaymentSystem\StripePaymentRepository;
@@ -88,6 +90,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(InventoryRepositoryInterface::class, InventoryRepository::class);
         $this->app->bind(SupplierRepositoryInterface::class, SupplierRepository::class);
         $this->app->bind(StripePaymentRepositoryInterface::class,StripePaymentRepository::class);
+        $this->app->bind(OrderTrackingRepositoryInterface::class,OrderTrackingRepository::class);
 
         
         //Validations Services
