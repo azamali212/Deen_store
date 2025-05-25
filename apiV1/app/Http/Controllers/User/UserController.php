@@ -21,6 +21,7 @@ class UserController extends Controller
     {
         $this->userRepository = $userRepository;
     }
+
     public function getAllUsers(Request $request)
     {
         $perPage = $request->get('perPage', 15); // Set pagination per page
@@ -268,23 +269,23 @@ class UserController extends Controller
     {
         // Validate user IDs from the request
         $userIds = $request->input('userIds', []);
-        
+
         if (empty($userIds)) {
             return response()->json([
                 'message' => 'No user IDs provided.',
             ], 400);  // Return 400 if no IDs are provided
         }
-        
+
         // Call the repository method to perform batch deletion
         $deletedCount = $this->userRepository->batchDeleteUsers($userIds);
-        
+
         // Check if any users were deleted
         if ($deletedCount === 0) {
             return response()->json([
                 'message' => 'No users found for the provided IDs, or restricted roles prevent deletion.',
             ], 404);  // Return 404 if no users were deleted
         }
-    
+
         return response()->json([
             'message' => "$deletedCount users deleted successfully.",
             'deleted_count' => $deletedCount,
@@ -295,29 +296,29 @@ class UserController extends Controller
     {
         // Validate user IDs from the request
         $userIds = $request->input('userIds', []);
-        
+
         if (empty($userIds)) {
             return response()->json([
                 'message' => 'No user IDs provided.',
             ], 400);  // Return 400 if no IDs are provided
         }
-        
+
         // Call the repository method to perform batch restoration
         $restoredCount = $this->userRepository->batchRestoreUsers($userIds);
-        
+
         // Check if any users were restored
         if ($restoredCount === 0) {
             // Check if any users exist in the database but were not soft deleted
             $existingUsers = User::whereIn('id', $userIds)->get();
             $nonTrashedIds = $existingUsers->pluck('id')->toArray();
-            
+
             return response()->json([
                 'message' => 'No users found for the provided IDs, or they could not be restored. ' .
-                             (empty($nonTrashedIds) ? '' : 'Some users were not soft-deleted.'),
+                    (empty($nonTrashedIds) ? '' : 'Some users were not soft-deleted.'),
                 'non_trashed_ids' => $nonTrashedIds,
             ], 404);  // Return 404 if no users were restored
         }
-    
+
         return response()->json([
             'message' => "$restoredCount users restored successfully.",
             'restored_count' => $restoredCount,
@@ -328,23 +329,23 @@ class UserController extends Controller
     {
         // Validate user IDs from the request
         $userIds = $request->input('userIds', []);
-        
+
         if (empty($userIds)) {
             return response()->json([
                 'message' => 'No user IDs provided.',
             ], 400);  // Return 400 if no IDs are provided
         }
-        
+
         // Call the repository method to perform batch force deletion
         $deletedCount = $this->userRepository->batchForceDeleteUsers($userIds);
-        
+
         // Check if any users were deleted
         if ($deletedCount === 0) {
             return response()->json([
                 'message' => 'No users found for the provided IDs, or restricted roles prevent deletion.',
             ], 404);  // Return 404 if no users were deleted
         }
-    
+
         return response()->json([
             'message' => "$deletedCount users permanently deleted successfully.",
             'deleted_count' => $deletedCount,
@@ -512,5 +513,4 @@ class UserController extends Controller
             ], 500);
         }
     }
-    
 }

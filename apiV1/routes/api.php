@@ -40,4 +40,5 @@ Route::prefix('v1')->group(function () {
     require base_path('routes/v1/inventory/inventory.php');
     require base_path('routes/v1/supplier/supplier.php');
     require base_path('routes/v1/stripPayment/strip.php');
+    require base_path('routes/v1/customer/customer.php');
 });

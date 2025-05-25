@@ -19,7 +19,10 @@ class Customer extends Model
         'country',
         'status',
         'preferred_language',
-        'newsletter_subscription'
+        'newsletter_subscription',
+        'user_id',
+        'store_manager_id',
+        
     ];
 
     // Define Relationships

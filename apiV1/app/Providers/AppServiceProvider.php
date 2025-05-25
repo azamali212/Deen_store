@@ -10,6 +10,8 @@ use App\Repositories\CategoryManagement\ParentCategoryRepo\CategoryRepository;
 use App\Repositories\CategoryManagement\ParentCategoryRepo\CategoryRepositoryInterface;
 use App\Repositories\Coupons\CouponsRepository;
 use App\Repositories\Coupons\CouponsRepositoryInterface;
+use App\Repositories\CustomerManagement\CustomerRepository;
+use App\Repositories\CustomerManagement\CustomerRepositoryInterface;
 use App\Repositories\Email\EmailDraftsRepository;
 use App\Repositories\Email\EmailDraftsRepositoryInterface;
 use App\Repositories\Email\EmailRepository;
@@ -91,6 +93,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(SupplierRepositoryInterface::class, SupplierRepository::class);
         $this->app->bind(StripePaymentRepositoryInterface::class,StripePaymentRepository::class);
         $this->app->bind(OrderTrackingRepositoryInterface::class,OrderTrackingRepository::class);
+        $this->app->bind(CustomerRepositoryInterface::class,CustomerRepository::class);
 
         
         //Validations Services
