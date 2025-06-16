@@ -12,4 +12,7 @@ Route::middleware('auth:api')->group(function () {
     Route::put('/permission/{id}', [PermissionController::class, 'update'])->middleware('permission:permission-edit');
     Route::delete('/permission/{id}', [PermissionController::class, 'destroy'])->middleware('permission:permission-delete');
     Route::get('/permission/details/{permissionId}', [PermissionController::class, 'getPermissionDetails']); // Get detailed permission information
+    Route::get('/permissions/distribution', [PermissionController::class, 'getPermissionDistribution']);
+    Route::get('/permissions/export', [PermissionController::class, 'exportPermissionsToExcel'])->name('permissions.export');
+    Route::post('/permissions/import', [PermissionController::class, 'importPermissions'])->name('permissions.import');
 });

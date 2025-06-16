@@ -13,7 +13,7 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/user/recycleBinUsers',[UserController::class, 'recycleBinUsers'])->name('recycleBinUsers');
 
     //Main Crud 
-    Route::get('/user',[UserController::class, 'getAllUsers'])->middleware('permission:user-index');
+    Route::get('/users',[UserController::class, 'getAllUsers'])->middleware('permission:user-index');
     Route::get('/user/{id}',[UserController::class, 'show'])->middleware('permission:user-show');
     Route::post('/user',[UserController::class, 'createUser'])->middleware('permission:user-create');
     Route::delete('/user/{id}',[UserController::class, 'deleteUser'])->middleware('permission:user-delete');

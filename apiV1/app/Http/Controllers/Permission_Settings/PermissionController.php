@@ -2,21 +2,30 @@
 
 namespace App\Http\Controllers\Permission_Settings;
 
+use App\Exports\PermissionExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Permission\PermissionCreateRequest;
 use App\Http\Requests\Permission\PermissionUpdateRequest;
+use App\Imports\PermissionImport;
 use App\Repositories\PermissionSettings\Permission\PermissionRepositoryInterface;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\ValidationException;
+use Maatwebsite\Excel\Excel;
+
 
 class PermissionController extends Controller
 {
+    protected $excel;
     protected $permissionRepository;
 
-    public function __construct(PermissionRepositoryInterface $permissionRepository)
+    public function __construct(PermissionRepositoryInterface $permissionRepository, Excel $excel)
     {
         $this->permissionRepository = $permissionRepository;
+        $this->excel = $excel;
     }
 
     /**
@@ -33,7 +42,7 @@ class PermissionController extends Controller
         try {
             $permission = $this->permissionRepository->getPermission($id);
             return response()->json(['data' => $permission], 200);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['error' => 'Permission not found'], 404);
         }
     }
@@ -74,7 +83,7 @@ class PermissionController extends Controller
                 return response()->json(['message' => 'Permission deleted successfully'], 200);
             }
             return response()->json(['error' => 'Permission not found'], 404);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['error' => 'Error deleting permission'], 500);
         }
     }
@@ -92,8 +101,76 @@ class PermissionController extends Controller
             }
 
             return response()->json(['data' => $details], 200);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['error' => 'Error fetching permission details'], 500);
         }
+    }
+
+    public function getPermissionDistribution(): JsonResponse
+    {
+        try {
+            $distribution = $this->permissionRepository->getPermissionDistribution();
+            return response()->json(['data' => $distribution], 200);
+        } catch (Exception $e) {
+            return response()->json(['error' => 'Error fetching permission distribution'], 500);
+        }
+    }
+
+    public function exportPermissionsToExcel()
+    {
+        try {
+            $filePath = $this->permissionRepository->exportPermissionsToExcel();
+
+            $headers = [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => 'attachment; filename="' . basename($filePath) . '"',
+                'Access-Control-Expose-Headers' => 'Content-Disposition'
+            ];
+
+            return response()->download($filePath, basename($filePath), $headers);
+        } catch (Exception $e) {
+            return response()->json([c
+                'error' => 'Error exporting permissions',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function importPermissions(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:2048'
+        ]);
+
+        try {
+            $file = $request->file('file');
+            $result = $this->permissionRepository->importPermissions($file, $this->excel);
+
+            if ($result['status']) {
+                return response()->json([
+                    'status' => true,
+                    'message' => $result['message'],
+                    'data' => $result['data']
+                ], 200);
+            }
+
+            return response()->json([
+                'status' => false,
+                'message' => $result['message'],
+                'errors' => $result['errors']
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Import failed',
+                'errors' => [$this->formatImportError($e->getMessage())]
+            ], 500);
+        }
+    }
+
+    private function formatImportError(string $message): string
+    {
+        // Clean up validation messages
+        $message = preg_replace('/The \d+\./', 'The ', $message);
+        return preg_replace('/row \d+:/', '', $message);
     }
 }

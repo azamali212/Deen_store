@@ -21,19 +21,35 @@ class RoleController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $roles = $this->roleRepository->getRoles($request->get('per_page', 15));
+        $roles = $this->roleRepository->getRoles(
+            $request->get('per_page', 15),
+            $request->get('search')
+        );
+
         return response()->json($roles);
     }
 
     public function store(StoreRoleRequest $request): JsonResponse
     {
-        $data = $request->validated();
-        $role = $this->roleRepository->createRole($data);
+        $validated = $request->validate([
+            'name' => 'required|string|max:255|unique:roles,name',
+            'slug' => 'nullable|string|max:255|unique:roles,slug',
+            'permission_names' => 'nullable|array',
+            'permission_names.*' => 'string|exists:permissions,name',
+        ]);
 
-        return response()->json([
-            'message' => 'Role created successfully!',
-            'role' => $role
-        ], 201);
+        try {
+            $role = $this->roleRepository->createRole($validated);
+            return response()->json([
+                'message' => 'Role created successfully',
+                'data' => $role
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to create role',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function show($id): JsonResponse
@@ -61,17 +77,31 @@ class RoleController extends Controller
             'message' => 'Role deleted successfully!'
         ]);
     }
+
+    public function destroyMultiple(Request $request)
+    {
+        $data = $request->validate([
+            'role_ids' => 'required|array',
+            'role_ids.*' => 'integer|exists:roles,id'
+        ]);
+
+        try {
+            $this->roleRepository->deleteMultipleRoles($request->role_ids);
+            return response()->json(['message' => 'Roles deleted successfully.'], 200);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
     public function attachPermissions(Request $request, $id): JsonResponse
     {
         $data = $request->validate([
-            'permission_ids' => 'required|array',
-            'permission_ids.*' => 'in:' . implode(',', Permissions::getAll()),  // Validate the permission ids against the predefined permissions
+            'permission_names' => 'required|array',
+            'permission_names.*' => 'string' // Ensure each item is a string
         ]);
 
-        // Attach the permissions to the role
         $role = $this->roleRepository->attachPermissions([
             'role_id' => $id,
-            'permission_ids' => $data['permission_ids'],
+            'permission_names' => $data['permission_names'],
         ]);
 
         return response()->json([
@@ -209,18 +239,18 @@ class RoleController extends Controller
         try {
             $userId = $request->query('user_id');
             $email = $request->query('email');
-    
+
             // Convert user_id to integer only if it's numeric
             $userId = is_numeric($userId) ? (int) $userId : null;
-    
+
             $role = $this->roleRepository->getRoleBySlug($slug);
             $permissions = $role->permissions;
             $users = $role->users;
-    
+
             // Query role based on user_id or email if provided
             $roleByUser = $userId ? $this->roleRepository->getRoleBySlugAndUserId($slug, $userId) : null;
             $roleByEmail = $email ? $this->roleRepository->getRoleBySlugAndUserEmail($slug, $email) : null;
-    
+
             return response()->json([
                 'role' => $role,
                 'permissions' => $permissions,

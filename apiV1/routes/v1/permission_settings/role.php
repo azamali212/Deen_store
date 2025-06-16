@@ -17,6 +17,7 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/roles/{id}/detach', [RoleController::class, 'detachUsers']);
     Route::get('/roles/{id}/permissions', [RoleController::class, 'getPermissions']);
     Route::get('/roles/{id}/users', [RoleController::class, 'getUsers']);
+    Route::delete('/roles/destroy-multiple', [RoleController::class, 'destroyMultiple']);
 
     //Route::get('/roles/{slug}', [RoleController::class, 'getRoleBySlug']);
     //Route::get('/roles/{slug}/permissions', [RoleController::class, 'getRolePermissionsBySlugAndUser']);

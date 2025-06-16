@@ -20,6 +20,9 @@ class UpdateRoleRequest extends FormRequest
         return [
             'name' => 'required|string|max:255|unique:roles,name,' . $this->route('role'),
             'slug' => 'required|string|max:255|unique:roles,slug,' . $this->route('role'),
+            'permission_names' => ['nullable', 'array'],
+            'permission_names.*' => ['string'],
+            
         ];
     }
 }

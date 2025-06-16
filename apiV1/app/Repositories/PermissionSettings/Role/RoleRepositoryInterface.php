@@ -14,6 +14,7 @@ interface RoleRepositoryInterface
     public function updateRole($data, $id);
     
     public function deleteRole($id);
+    public function deleteMultipleRoles(array $roleIds): bool;
     
     public function getRolePermissions($id);
     
