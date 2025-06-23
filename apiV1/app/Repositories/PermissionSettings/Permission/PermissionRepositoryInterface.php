@@ -16,4 +16,5 @@ interface PermissionRepositoryInterface{
     public function exportPermissionsToExcel();
 
     public function importPermissions(UploadedFile $file,Excel $excel): array;
+    public function bulkDelete(array $ids, bool $softDelete = false): array;
 }

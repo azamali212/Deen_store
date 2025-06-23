@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Exception;
-
+use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
@@ -24,11 +24,37 @@ class UserController extends Controller
 
     public function getAllUsers(Request $request)
     {
-        $perPage = $request->get('perPage', 15); // Set pagination per page
         $users = $this->userRepository->getAllUsers($request);
+
+        $totalUsers = User::count();
+        $activeUsers = User::where('status', 'active')->count();
+        $inactiveUsers = User::where('status', 'inactive')->count();
+
+        // Get all roles except 'customer'
+        $adminRoles = Role::where('name', '!=', 'customer')->pluck('name');
+
+        // Count all users that have any role except 'customer'
+        $adminUsers = User::whereHas('roles', function ($query) use ($adminRoles) {
+            $query->whereIn('name', $adminRoles);
+        })->count();
+
+        // Count users that only have 'customer' role
+        $customerUsers = User::whereHas('roles', function ($query) {
+            $query->where('name', 'customer');
+        })->count();
+
+        
+
         return response()->json([
             'success' => true,
-            'data' => $users
+            'data' => $users,
+            'meta' => [
+                'total_users'     => $totalUsers,
+                'active_users'    => $activeUsers,
+                'inactive_users'  => $inactiveUsers,
+                'admin_users'     => $adminUsers,
+                'customer_users'  => $customerUsers,
+            ]
         ]);
     }
     public function show($id, Request $request)

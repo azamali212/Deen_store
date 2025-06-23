@@ -2,19 +2,19 @@
 
 namespace App\Http\Controllers\Permission_Settings;
 
-use App\Exports\PermissionExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Permission\PermissionCreateRequest;
 use App\Http\Requests\Permission\PermissionUpdateRequest;
-use App\Imports\PermissionImport;
 use App\Repositories\PermissionSettings\Permission\PermissionRepositoryInterface;
+use Maatwebsite\Excel\Excel;
 use Exception;
+use Throwable;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Response;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
-use Maatwebsite\Excel\Excel;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 
 class PermissionController extends Controller
@@ -65,6 +65,7 @@ class PermissionController extends Controller
 
         $validatedData = $request->validated();
         $permission = $this->permissionRepository->updatePermission($validatedData, $id);
+        
 
         return response()->json([
             'message' => 'Permission updated successfully!',
@@ -87,6 +88,66 @@ class PermissionController extends Controller
             return response()->json(['error' => 'Error deleting permission'], 500);
         }
     }
+
+    /**
+     * Delete multiple permissions
+     */
+    public function deleteMultiple(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'required|integer|exists:permissions,id',
+            'soft_delete' => 'sometimes|boolean'
+        ]);
+
+        try {
+            $result = $this->permissionRepository->bulkDelete(
+                $validated['ids'],
+                $validated['soft_delete'] ?? false
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['message'],
+                'data' => [
+                    'deleted_count' => $result['count'],
+                    'failed_ids' => $result['failed_ids'],
+                    'skipped_ids' => $result['skipped_ids']
+                ],
+                'metadata' => [
+                    'total_requested' => count($validated['ids']),
+                    'timestamp' => now()->toDateTimeString()
+                ]
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bulk operation failed',
+                'error' => [
+                    'code' => $e->getCode(),
+                    'message' => $e->getMessage()
+                ]
+            ], $this->getStatusCodeFromException($e));
+        }
+    }
+
+    protected function getStatusCodeFromException(Throwable $e): int
+    {
+        if ($e instanceof HttpException) {
+            return $e->getStatusCode();
+        }
+        if ($e instanceof ModelNotFoundException) {
+            return 404;
+        }
+        if ($e instanceof AuthorizationException) {
+            return 403;
+        }
+        if ($e instanceof ValidationException) {
+            return 422;
+        }
+        return 500;
+    }
+
     public function getPermissionDetails(Request $request, $permissionId): JsonResponse
     {
         try {
@@ -129,12 +190,10 @@ class PermissionController extends Controller
 
             return response()->download($filePath, basename($filePath), $headers);
         } catch (Exception $e) {
-            return response()->json([c
-                'error' => 'Error exporting permissions',
-                'message' => $e->getMessage()
-            ], 500);
+            return response()->json(['error' => 'Error fetching permission distribution'], 500);
         }
     }
+
     public function importPermissions(Request $request)
     {
         $request->validate([

@@ -37,5 +37,4 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/users/bulk-update-status', [UserController::class, 'bulkUpdateUserStatus']);  // POST /api/users/bulk-update-status
     Route::post('/users/cache-query', [UserController::class, 'cacheQueryResult']);  // POST /api/users/cache-query
     Route::post('/users/assign-permissions', [UserController::class, 'assignPermissionsToUser']);  // POST 
-    
 });

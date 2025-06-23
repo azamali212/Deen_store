@@ -8,10 +8,14 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use App\Exports\PermissionExport;
 use App\Imports\PermissionImport;
+use Exception;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Maatwebsite\Excel\Excel;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 class PermissionRepository implements PermissionRepositoryInterface
 {
@@ -50,6 +54,98 @@ class PermissionRepository implements PermissionRepositoryInterface
         return Permission::destroy($id); // Uses direct deletion for better performance
     }
 
+    public function bulkDelete(array $ids, bool $softDelete = false): array
+    {
+        if (empty($ids)) {
+            throw new InvalidArgumentException('No IDs provided for deletion.');
+        }
+    
+        // Clean and validate IDs
+        $ids = array_unique(array_filter(array_map('intval', $ids)));
+        $existingIds = Permission::whereIn('id', $ids)->pluck('id')->toArray();
+        
+        $nonExistingIds = array_diff($ids, $existingIds);
+        $deletableIds = array_intersect($ids, $existingIds);
+        
+        // Use transaction for atomic operations
+        DB::beginTransaction();
+        
+        try {
+            $deletedCount = 0;
+            $failedIds = [];
+            
+            if ($softDelete && method_exists(Permission::class, 'delete')) {
+                // Batch soft delete
+                $deletedCount = Permission::whereIn('id', $deletableIds)->delete();
+            } else {
+                // Batch force delete
+                $deletedCount = Permission::whereIn('id', $deletableIds)->forceDelete();
+            }
+            
+            DB::commit();
+            
+            return [
+                'count' => $deletedCount,
+                'failed_ids' => [],
+                'skipped_ids' => $nonExistingIds,
+                'message' => $this->generateResultMessage($deletedCount, [], $nonExistingIds)
+            ];
+            
+        } catch (Exception $e) {
+            DB::rollBack();
+            
+            // Fallback to individual deletions if batch fails
+            return $this->individualDeletionFallback($deletableIds, $nonExistingIds, $softDelete);
+        }
+    }
+    
+    protected function individualDeletionFallback(array $deletableIds, array $nonExistingIds, bool $softDelete): array
+    {
+        $deletedCount = 0;
+        $failedIds = [];
+        
+        foreach ($deletableIds as $id) {
+            try {
+                $permission = Permission::withTrashed()->find($id);
+                
+                if ($softDelete && method_exists($permission, 'delete')) {
+                    $permission->delete();
+                } else {
+                    $permission->forceDelete();
+                }
+                
+                $deletedCount++;
+            } catch (Exception $e) {
+                $failedIds[$id] = $e->getMessage();
+            }
+        }
+        
+        return [
+            'count' => $deletedCount,
+            'failed_ids' => $failedIds,
+            'skipped_ids' => $nonExistingIds,
+            'message' => $this->generateResultMessage($deletedCount, $failedIds, $nonExistingIds)
+        ];
+    }
+    
+    protected function generateResultMessage(int $count, array $failedIds, array $skippedIds): string
+    {
+        $parts = [];
+        
+        if ($count > 0) {
+            $parts[] = "Deleted {$count} permissions.";
+        }
+        
+        if (!empty($failedIds)) {
+            $parts[] = count($failedIds)." failed.";
+        }
+        
+        if (!empty($skippedIds)) {
+            $parts[] = count($skippedIds)." not found.";
+        }
+        
+        return implode(' ', $parts) ?: 'No actions performed.';
+    }
     public function getPermissionDetails($permissionId, $roleSlug = null, $userId = null, $email = null, $perPage = 10)
     {
         $permission = Permission::with(['roles', 'users'])->find($permissionId);

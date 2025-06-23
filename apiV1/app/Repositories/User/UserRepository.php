@@ -24,58 +24,42 @@ use Illuminate\Support\Facades\Notification;
 
 class UserRepository implements UserRepositoryInterface
 {
-    public function getAllUsers($request)
-    {
-        // Initialize the query builder
-        $query = User::query();
 
-        // Apply dynamic filters if provided in the request
+
+    public function getAllUsers($request): LengthAwarePaginator
+    {
+        $query = User::query();
+    
+        // Apply filters
         if ($request->has('filters')) {
             $filters = $request->input('filters');
-
             foreach ($filters as $key => $value) {
                 if ($key === 'name') {
                     $query->where('name', 'like', '%' . $value . '%');
                 } elseif ($key === 'email') {
                     $query->where('email', 'like', '%' . $value . '%');
                 } elseif ($key === 'role') {
-                    $query->whereHas('roles', function ($query) use ($value) {
-                        $query->where('name', $value);
-                    });
+                    $query->whereHas('roles', fn($q) => $q->where('name', $value));
                 } elseif ($key === 'status') {
                     $query->where('status', $value);
                 } elseif ($key === 'created_at') {
                     $query->whereDate('created_at', $value);
                 }
-                // Add more custom filters as necessary
             }
         }
-
-        // Apply sorting based on the request
+    
+        // Sorting
         if ($request->has('sort')) {
-            $sort = $request->input('sort');
-            $sortDirection = $request->input('sort_direction', 'asc');
-
-            $query->orderBy($sort, $sortDirection);
+            $query->orderBy(
+                $request->input('sort'),
+                $request->input('sort_direction', 'asc')
+            );
         }
-
-        // Apply pagination if necessary
-        $perPage = $request->input('per_page', 15); // Default 15 items per page
-        $users = $query->paginate($perPage);
-
-        // Optionally include related models
-        if ($request->has('include')) {
-            $includeRelations = $request->input('include');
-
-            foreach ($includeRelations as $relation) {
-                if (method_exists(User::class, $relation)) {
-                    $query->with($relation);
-                }
-            }
-        }
-
-        // Return the paginated users with any applied filters, sorting, and relations
-        return $users;
+    
+        // Always include roles and both types of permissions
+        $query->with(['roles.permissions']);
+    
+        return $query->paginate($request->input('per_page', 15));
     }
     /**
      * Get a user by their ID, including optional related models.
@@ -919,13 +903,14 @@ class UserRepository implements UserRepositoryInterface
      * @param string $permission
      * @return \Illuminate\Database\Eloquent\Collection
      */
-    public function getUsersWithPermission($permission) {
+    public function getUsersWithPermission($permission)
+    {
         try {
             return User::whereHas('permissions', function ($query) use ($permission) {
                 $query->where('name', $permission); // Filter by permission name
             })
-            ->with('permissions') // Eager load permissions for each user to avoid N+1 query problem
-            ->get();
+                ->with('permissions') // Eager load permissions for each user to avoid N+1 query problem
+                ->get();
         } catch (Exception $e) {
             Log::error('Error fetching users with permission: ' . $e->getMessage());
             return collect(); // Return an empty collection in case of an error
@@ -939,18 +924,19 @@ class UserRepository implements UserRepositoryInterface
      * @param string $status
      * @return int
      */
-    public function bulkUpdateUserStatus(array $userIds, $status) {
+    public function bulkUpdateUserStatus(array $userIds, $status)
+    {
         try {
             // Start transaction to ensure data consistency
             DB::beginTransaction();
-    
+
             // Bulk update user status
             $updatedCount = User::whereIn('id', $userIds)
                 ->update(['status' => $status]);
-    
+
             // Commit the transaction
             DB::commit();
-    
+
             return $updatedCount; // Return the number of users updated
         } catch (Exception $e) {
             // Rollback transaction in case of an error
@@ -968,7 +954,8 @@ class UserRepository implements UserRepositoryInterface
      * @param int $ttl
      * @return mixed
      */
-    public function cacheQueryResult($cacheKey, callable $queryCallback, $ttl = 60) {
+    public function cacheQueryResult($cacheKey, callable $queryCallback, $ttl = 60)
+    {
         try {
             // Try to fetch the data from the cache
             return Cache::remember($cacheKey, $ttl, function () use ($queryCallback) {
@@ -987,30 +974,31 @@ class UserRepository implements UserRepositoryInterface
      * @param array $permissions
      * @return \App\Models\User
      */
-    public function assignPermissionsToUser($userId, array $permissions) {
+    public function assignPermissionsToUser($userId, array $permissions)
+    {
         try {
             // Begin a database transaction to ensure data consistency
             DB::beginTransaction();
-    
+
             // Fetch the user from the database
             $user = User::findOrFail($userId);
-    
+
             // Validate and assign the permissions
             $validPermissions = Permission::whereIn('name', $permissions)->get();
             if ($validPermissions->count() !== count($permissions)) {
                 throw new Exception('One or more permissions are invalid.');
             }
-    
+
             // Sync the permissions for the user
             $user->permissions()->sync($validPermissions->pluck('id'));
-    
+
             // Commit the transaction
             DB::commit();
-    
+
             // Cache the updated permissions for future use
             Cache::forget("user_permissions_{$userId}");
             Cache::put("user_permissions_{$userId}", $validPermissions);
-    
+
             return $user; // Return the updated user
         } catch (Exception $e) {
             DB::rollBack(); // Rollback if any error occurs

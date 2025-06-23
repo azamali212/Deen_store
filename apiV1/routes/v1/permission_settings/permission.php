@@ -11,6 +11,7 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/permission', [PermissionController::class, 'store'])->middleware('permission:permission-create');
     Route::put('/permission/{id}', [PermissionController::class, 'update'])->middleware('permission:permission-edit');
     Route::delete('/permission/{id}', [PermissionController::class, 'destroy'])->middleware('permission:permission-delete');
+    Route::delete('/permissions/delete-multiple', [PermissionController::class, 'deleteMultiple']);
     Route::get('/permission/details/{permissionId}', [PermissionController::class, 'getPermissionDetails']); // Get detailed permission information
     Route::get('/permissions/distribution', [PermissionController::class, 'getPermissionDistribution']);
     Route::get('/permissions/export', [PermissionController::class, 'exportPermissionsToExcel'])->name('permissions.export');
