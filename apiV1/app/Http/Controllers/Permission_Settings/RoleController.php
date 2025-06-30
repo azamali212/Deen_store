@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Permission_Settings;
 
-use App\Data\Permissions;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Role\StoreRoleRequest;
 use App\Http\Requests\Role\UpdateRoleRequest;

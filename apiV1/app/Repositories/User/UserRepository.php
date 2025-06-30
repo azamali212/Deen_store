@@ -153,7 +153,7 @@ class UserRepository implements UserRepositoryInterface
             DB::commit();
 
             return $user->load(['roles', 'permissions']);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();  // Rollback transaction if anything goes wrong
 
             // Log the exception for debugging
@@ -163,7 +163,7 @@ class UserRepository implements UserRepositoryInterface
             ]);
 
             // Throw a custom exception to handle it in the controller or service layer
-            throw new \Exception("An error occurred while creating the user.", 500);
+            throw new Exception("An error occurred while creating the user.", 500);
         }
     }
 
@@ -187,6 +187,7 @@ class UserRepository implements UserRepositoryInterface
                 'name' => $data['name'] ?? $user->name,
                 'email' => $data['email'] ?? $user->email,
                 'password' => isset($data['password']) ? Hash::make($data['password']) : $user->password,
+                'status' => $data['status'] ?? $user->status,
             ];
 
             // Update the user details

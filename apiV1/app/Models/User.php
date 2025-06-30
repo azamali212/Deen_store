@@ -45,6 +45,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'email_verification_token',
         'last_login_at', 
         'default_payment_method',
+        'status', // e.g., 'active', 'inactive', 'banned'
     ];
 
     protected $guard_name = 'api';

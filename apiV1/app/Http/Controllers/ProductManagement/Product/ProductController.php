@@ -4,9 +4,6 @@ namespace App\Http\Controllers\ProductManagement\Product;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Product\ProductRequest;
-use App\Models\Product;
-use App\Models\User;
-use App\Models\UserProductView;
 use App\Repositories\ProductManagement\ProductRepo\ProductRepositoryInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;

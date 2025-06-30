@@ -6,10 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Jobs\LogUserActionJob;
 use App\Models\User;
 use App\Repositories\User\UserRepositoryInterface;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Exception;
 use Spatie\Permission\Models\Role;
@@ -42,8 +40,6 @@ class UserController extends Controller
         $customerUsers = User::whereHas('roles', function ($query) {
             $query->where('name', 'customer');
         })->count();
-
-        
 
         return response()->json([
             'success' => true,
@@ -104,6 +100,7 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $id,
+            'status' => 'nullable|string|in:active,inactive',  // Optional status
             'password' => 'nullable|string|min:8',
             'roles' => 'nullable|array',  // Ensure roles are an array if provided
             'roles.*' => 'exists:roles,name',  // Validate each role name exists in the roles table
@@ -125,7 +122,7 @@ class UserController extends Controller
                 'message' => 'User updated successfully',
                 'data' => $user,
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Handle exception if any
             return response()->json([
                 'success' => false,
@@ -152,7 +149,7 @@ class UserController extends Controller
 
             // If the repository returns an error, it will already contain the proper status and message
             return $response;
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Log the exception details
             Log::error('Error fetching recycle bin users', [
                 'exception' => $e->getMessage(),
@@ -173,7 +170,7 @@ class UserController extends Controller
 
             // If the repository returns an error, it will already contain the proper status and message
             return $response;
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Log the exception details
             Log::error('Error restoring user', [
                 'user_id' => $id,
@@ -263,7 +260,7 @@ class UserController extends Controller
             return response()->json([
                 'message' => 'User activated successfully.',
             ], 200);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'message' => $e->getMessage(),
             ], $e->getCode() ?: 500);
@@ -284,7 +281,7 @@ class UserController extends Controller
             return response()->json([
                 'message' => 'User deactivated successfully.',
             ], 200);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'message' => $e->getMessage(),
             ], $e->getCode() ?: 500);
