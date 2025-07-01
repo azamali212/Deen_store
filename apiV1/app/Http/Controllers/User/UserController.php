@@ -194,6 +194,66 @@ class UserController extends Controller
         ]);
     }
 
+    /**
+     * Bulk delete users from recycle bin (permanent delete)
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function bulkDeleteFromRecycleBin(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_ids' => 'required|array',
+            'user_ids.*' => 'exists:users,id'
+        ]);
+
+        $result = $this->userRepository->bulkDeleteSoftDeletedUsers($validated['user_ids']);
+
+        if ($result['success']) {
+            return response()->json([
+                'success' => true,
+                'message' => $result['message'],
+                'data' => [
+                    'deleted_count' => $result['deleted_count'],
+                    'failed_ids' => $result['failed_ids'] ?? []
+                ]
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => $result['message'],
+            'error' => $result['error'] ?? null
+        ], 500);
+    }
+
+    /**
+     * Restore all users from recycle bin
+     * 
+     * @return JsonResponse
+     */
+    public function restoreAllFromRecycleBin(): JsonResponse
+    {
+        $result = $this->userRepository->restoreAllUsers();
+
+        if ($result['success']) {
+            return response()->json([
+                'success' => true,
+                'message' => $result['message'],
+                'data' => [
+                    'restored_count' => $result['restored_count'],
+                    'failed_ids' => $result['failed_ids'] ?? []
+                ]
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => $result['message'],
+            'error' => $result['error'] ?? null
+        ], 500);
+    }
+
     public function searchUsers(Request $request)
     {
         $criteria = $request->input('search');

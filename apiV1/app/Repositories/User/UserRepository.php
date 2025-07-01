@@ -29,7 +29,7 @@ class UserRepository implements UserRepositoryInterface
     public function getAllUsers($request): LengthAwarePaginator
     {
         $query = User::query();
-    
+
         // Apply filters
         if ($request->has('filters')) {
             $filters = $request->input('filters');
@@ -47,7 +47,7 @@ class UserRepository implements UserRepositoryInterface
                 }
             }
         }
-    
+
         // Sorting
         if ($request->has('sort')) {
             $query->orderBy(
@@ -55,10 +55,10 @@ class UserRepository implements UserRepositoryInterface
                 $request->input('sort_direction', 'asc')
             );
         }
-    
+
         // Always include roles and both types of permissions
         $query->with(['roles.permissions']);
-    
+
         return $query->paginate($request->input('per_page', 15));
     }
     /**
@@ -510,6 +510,132 @@ class UserRepository implements UserRepositoryInterface
                 'success' => false,
                 'message' => 'An error occurred while force deleting the user.',
             ], 500);
+        }
+    }
+    /**
+     * Bulk delete multiple users with validation
+     * 
+     * @param array $userIds
+     * @return array
+     */
+    /**
+     * Bulk delete multiple soft-deleted users (move to recycle bin)
+     * 
+     * @param array $userIds
+     * @return array
+     */
+    public function bulkDeleteSoftDeletedUsers(array $userIds): array
+    {
+        DB::beginTransaction();
+
+        try {
+            // Get only soft-deleted users with their roles
+            $users = User::onlyTrashed()->with('roles')->whereIn('id', $userIds)->get();
+
+            if ($users->isEmpty()) {
+                return [
+                    'success' => false,
+                    'message' => 'No soft-deleted users found with the provided IDs',
+                    'deleted_count' => 0
+                ];
+            }
+
+            $deletedCount = 0;
+            $failedIds = [];
+
+            foreach ($users as $user) {
+                try {
+                    // Permanently delete the soft-deleted user
+                    $user->forceDelete();
+                    $deletedCount++;
+
+                    Log::info("User permanently deleted from recycle bin", [
+                        'user_id' => $user->id,
+                        'user_name' => $user->name
+                    ]);
+                } catch (Exception $e) {
+                    $failedIds[] = $user->id;
+                    Log::error("Error permanently deleting user {$user->id}: " . $e->getMessage());
+                }
+            }
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'message' => "Permanently deleted {$deletedCount} of " . count($userIds) . " users from recycle bin",
+                'deleted_count' => $deletedCount,
+                'failed_ids' => $failedIds
+            ];
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Bulk delete from recycle bin error: ' . $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => 'Failed to bulk delete users from recycle bin',
+                'deleted_count' => 0,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Restore all soft-deleted users from recycle bin
+     * 
+     * @return array
+     */
+    public function restoreAllUsers(): array
+    {
+        DB::beginTransaction();
+
+        try {
+            $deletedUsers = User::onlyTrashed()->get();
+
+            if ($deletedUsers->isEmpty()) {
+                return [
+                    'success' => false,
+                    'message' => 'No deleted users found in recycle bin to restore',
+                    'restored_count' => 0
+                ];
+            }
+
+            $restoredCount = 0;
+            $failedIds = [];
+
+            foreach ($deletedUsers as $user) {
+                try {
+                    $user->restore();
+                    $restoredCount++;
+
+                    Log::info("User restored from recycle bin", [
+                        'user_id' => $user->id,
+                        'user_name' => $user->name
+                    ]);
+                } catch (Exception $e) {
+                    $failedIds[] = $user->id;
+                    Log::error("Error restoring user {$user->id}: " . $e->getMessage());
+                }
+            }
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'message' => "Restored {$restoredCount} users from recycle bin",
+                'restored_count' => $restoredCount,
+                'failed_ids' => $failedIds
+            ];
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Restore all from recycle bin error: ' . $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => 'Failed to restore users from recycle bin',
+                'restored_count' => 0,
+                'error' => $e->getMessage()
+            ];
         }
     }
     public function searchUsers($criteria, $filters = [], $sort = 'name', $sortDirection = 'asc', $perPage = 15): LengthAwarePaginator

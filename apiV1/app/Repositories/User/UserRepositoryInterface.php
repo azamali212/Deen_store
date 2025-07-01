@@ -85,7 +85,7 @@ interface UserRepositoryInterface
      */
     public function changeUserRole($id, $roleName);
 
-  
+
     public function logUserAction($userId, $action, array $details = []): void;
     public function performLog($userId, $action, array $details = []): UserLogAction;
 
@@ -99,7 +99,7 @@ interface UserRepositoryInterface
      * @param int $id
      * @return \App\Models\User
      */
-    public function activateUser(string $id):bool;
+    public function activateUser(string $id): bool;
 
     /**
      * Deactivate a user (set inactive status), with potential additional logic like session invalidation.
@@ -184,4 +184,8 @@ interface UserRepositoryInterface
      * @return \App\Models\User
      */
     public function assignPermissionsToUser($userId, array $permissions);
+
+    public function bulkDeleteSoftDeletedUsers(array $userIds): array;
+
+    public function restoreAllUsers(): array;
 }
