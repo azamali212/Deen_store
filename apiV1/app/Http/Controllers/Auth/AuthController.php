@@ -42,12 +42,16 @@ class AuthController extends Controller
 
     public function login(Request $request)
     {
-        $validated = $request->validate([
+        $request->validate([
             'email' => 'required|email',
-            'password' => 'required|string',
+            'password' => 'required',
+            'guard' => 'sometimes|string' // Optional guard parameter
         ]);
 
-        return $this->authRepository->login($validated);
+        return $this->authRepository->login(
+            $request->only('email', 'password'),
+            $request->input('guard')
+        );
     }
 
     public function verifyEmail(Request $request)
@@ -77,6 +81,17 @@ class AuthController extends Controller
             return response()->json(['message' => 'Email verified successfully. Welcome email sent.', 'user' => $user]);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to send welcome email: ' . $e->getMessage()], 400);
+        }
+    }
+    public function switchRole(Request $request, AuthRepository $authRepository)
+    {
+        $request->validate(['role' => 'required|string']);
+
+        try {
+            $user = $authRepository->switchRole($request->user(), $request->role);
+            return response()->json(['message' => 'Role switched successfully', 'user' => $user]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
         }
     }
     public function forgotPassword(Request $request, AuthRepository $authRepository)

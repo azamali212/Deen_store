@@ -5,16 +5,15 @@ namespace App\Repositories\Auth;
 use App\Models\User;
 use App\Notifications\ForgotPasswordNotification;
 use App\Notifications\ResetPasswordNotification;
-use App\Repositories\Email\EmailRepositoryInterface;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\RateLimiter;
 use App\Jobs\LogUserActionJob;
 use App\Repositories\User\UserRepositoryInterface;
-use Illuminate\Cache\RateLimiter;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter as FacadeRateLimiter;
 
 class AuthRepository implements AuthRepositoryInterface
@@ -61,57 +60,144 @@ class AuthRepository implements AuthRepositoryInterface
         return $user;
     }
 
-    public function login(array $credentials)
+    public function login(array $credentials, $guard = null)
     {
-        $email = $credentials['email'] ?? 'unknown@example.com'; // fallback
+        $email = $credentials['email'] ?? 'unknown@example.com';
         $key = 'login_attempts:' . strtolower($email);
         $maxAttempts = 3;
         $decayMinutes = 5;
 
-        if (FacadeRateLimiter::tooManyAttempts($key, $maxAttempts)) {
-            $seconds = FacadeRateLimiter::availableIn($key);
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            $seconds = RateLimiter::availableIn($key);
             return response()->json([
                 'message' => "Too many login attempts. Please try again in {$seconds} seconds."
             ], 429);
         }
 
-        if (!Auth::attempt($credentials)) {
-            FacadeRateLimiter::hit($key, $decayMinutes * 60);
+        // Find user by email
+        $user = User::where('email', $credentials['email'])->first();
 
-            $remainingAttempts = FacadeRateLimiter::remaining($key, $maxAttempts);
+        if (!$user || !Hash::check($credentials['password'], $user->password)) {
+            RateLimiter::hit($key, $decayMinutes * 60);
+            $remainingAttempts = RateLimiter::remaining($key, $maxAttempts);
 
             return response()->json([
-                'message' => 'Invalid credentials. ' . ($remainingAttempts > 0
-                    ? "You have {$remainingAttempts} more attempt(s)."
-                    : "Account locked. Try again in {$decayMinutes} minutes.")
+                'message' => 'Invalid credentials. ' .
+                    ($remainingAttempts > 0 ? "You have {$remainingAttempts} more attempt(s)." :
+                        "Account locked. Try again in {$decayMinutes} minutes.")
             ], 401);
         }
 
+        // Determine guard based on role if not specified
+        $guard = $guard ?: $this->getDefaultGuardForRole($user->getRoleNames()->first());
+
         // Login successful
-        FacadeRateLimiter::clear($key); // reset attempts on success
+        RateLimiter::clear($key);
+        $user->update(['last_login_at' => now()]);
 
-        $user = Auth::user();
+        // Get all permissions (direct + via roles) using Spatie
+        $permissions = $user->getAllPermissions()->pluck('name');
+        $role = $user->getRoleNames()->first();
 
-        if ($user instanceof User) {
-            $user->update(['last_login_at' => now()]);
-            $user->refresh();
-            $token = $user->createToken('device_name')->plainTextToken;
+        // Generate unique token identifier for this tab session
+        $tabSessionId = Str::random(40);
+        $tokenName = $guard . '_token_' . $tabSessionId;
 
-            LogUserActionJob::dispatch($user->id, 'user_registered', [
-                'event_type' => 'registration',
-                'status' => 'success',
-                'details' => 'User successfully registered and assigned role: ' . $user->getRoleNames(),
-                'reference' => $user,
-            ]);
+        // Create new token without deleting existing ones (for multi-tab support)
+        $token = $user->createToken($tokenName, $permissions->toArray())->plainTextToken;
 
-            return response()->json([
-                'message' => 'Login successful',
-                'user' => $user,
-                'token' => $token,
-            ]);
+        // Store the guard context for this token
+        Cache::put("auth:guard:{$tokenName}", $guard, now()->addDay());
+
+        LogUserActionJob::dispatch($user->id, 'user_login', [
+            'event_type' => 'authentication',
+            'status' => 'success',
+            'details' => "User logged in with guard: {$guard}",
+            'reference' => $user,
+            'tab_session_id' => $tabSessionId,
+        ]);
+
+        return response()->json([
+            'message' => 'Login successful',
+            'user' => $user,
+            'token' => $token,
+            'guard' => $guard,
+            'role' => $role,
+            'permissions' => $permissions,
+            'tab_session_id' => $tabSessionId, // Return to client for tab identification
+        ]);
+    }
+    public function getCurrentGuard($tokenName)
+    {
+        return Cache::get("auth:guard:{$tokenName}");
+    }
+
+
+    public function getValidGuardsForRole($role)
+    {
+        // Cache the role-guard mapping for better performance
+        return Cache::remember("role-guard-mapping:{$role}", now()->addDay(), function () use ($role) {
+            $roleGuardMap = [
+                'Super Admin' => ['super-admin-api'],
+                'Admin' => ['admin-api'],
+                'Vendor Admin' => ['vendor-admin-api'],
+                'Customer' => ['customer-api'],
+                'Delivery Manager' => ['delivery-manager-api'],
+                'Store Admin' => ['store-admin-api'],
+                'Product Admin' => ['product-admin-api'],
+                'Order Admin' => ['order-admin-api'],
+            ];
+
+            return $roleGuardMap[$role] ?? ['api'];
+        });
+    }
+
+    public function getDefaultGuardForRole($role)
+    {
+        // Cache the default guard mapping for better performance
+        return Cache::remember("default-guard:{$role}", now()->addDay(), function () use ($role) {
+            $mapping = [
+                'Super Admin' => 'super-admin-api',
+                'Admin' => 'admin-api',
+                'Vendor Admin' => 'vendor-admin-api',
+                'Customer' => 'customer-api',
+                'Delivery Manager' => 'delivery-manager-api',
+                'Store Admin' => 'store-admin-api',
+                'Product Admin' => 'product-admin-api',
+                'Order Admin' => 'order-admin-api',
+            ];
+
+            return $mapping[$role] ?? 'api';
+        });
+    }
+
+    public function switchRole(User $user, string $role)
+    {
+        if (!$user->hasRole($role)) {
+            throw new \Exception("User doesn't have this role");
         }
 
-        return response()->json(['message' => 'Error logging in'], 500);
+        $newGuard = $this->getDefaultGuardForRole($role);
+
+        // Delete existing tokens
+        $user->tokens()->delete();
+
+        // Get all permissions for the new role
+        $permissions = $user->getAllPermissions()->pluck('name');
+
+        // Create new token with all permissions
+        $tokenName = $newGuard . '_token_' . now()->timestamp;
+        $token = $user->createToken($tokenName, $permissions->toArray())->plainTextToken;
+
+        $user->update(['current_guard' => $newGuard]);
+
+        return response()->json([
+            'message' => 'Role switched successfully',
+            'token' => $token,
+            'guard' => $newGuard,
+            'role' => $role,
+            'permissions' => $permissions
+        ]);
     }
 
     public function verifyEmail($token)

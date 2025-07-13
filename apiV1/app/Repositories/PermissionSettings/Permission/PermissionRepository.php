@@ -9,10 +9,7 @@ use Spatie\Permission\Models\Role;
 use App\Exports\PermissionExport;
 use App\Imports\PermissionImport;
 use Exception;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Maatwebsite\Excel\Excel;
-use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -252,7 +249,7 @@ class PermissionRepository implements PermissionRepositoryInterface
                     'skipped' => $skippedCount
                 ]
             ];
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return [
                 'status' => false,
                 'message' => 'Import failed',

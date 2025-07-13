@@ -9,7 +9,7 @@ use App\Http\Controllers\ProductManagement\Product\ProductController;
 use Illuminate\Support\Facades\Route;
 
 
-Route::middleware('auth:api')->group(function () {
+Route::middleware('auth:sanctum')->group(function () {
     
     //Product Simple Crud
     Route::get('/products',[ProductController::class,'index'])->middleware('permission:product-index');

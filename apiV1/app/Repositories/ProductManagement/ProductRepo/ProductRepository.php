@@ -7,9 +7,6 @@ use App\Events\ProductCreatedByBundleAndBadge;
 use App\Events\ProductDeleted;
 use App\Events\ProductUpdated;
 use App\Models\Product;
-use App\Models\User;
-use App\Models\UserProductView;
-use Illuminate\Http\JsonResponse;
 use GuzzleHttp\Client;
 
 class ProductRepository implements ProductRepositoryInterface

@@ -7,7 +7,6 @@ use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\Coupon;
-use App\Models\Order;
 use App\Models\User;
 use App\Models\Wishlist;
 use App\Models\WishlistItem;
@@ -39,7 +38,6 @@ class CartRepository implements CartRepositoryInterface
                 ->first();
         });
     }
-
     public function addToCart($user_id, $product_id, $variant_id, $quantity, $attributes = [])
     {
         DB::beginTransaction();

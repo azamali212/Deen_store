@@ -44,6 +44,38 @@ return [
             'driver' => 'sanctum',
             'provider' => 'users',
         ],
+        'super-admin-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'admin-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'vendor-admin-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'customer-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'delivery-manager-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'store-admin-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'product-admin-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'order-admin-api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
     ],
 
     /*

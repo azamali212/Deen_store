@@ -1,12 +1,10 @@
 <?php
 
-use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\User\UserController;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Http\Request;
 
 
-Route::middleware('auth:api')->group(function () {
+Route::middleware(['auth:sanctum','role:Super Admin'])->group(function () {
 
     //Searching User
     Route::get('/users/search', [UserController::class, 'searchUsers']);

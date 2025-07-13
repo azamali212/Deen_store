@@ -31,7 +31,7 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, HasApiTokens, HasRoles, SoftDeletes,Billable;
+    use HasFactory, Notifiable, HasApiTokens, HasRoles, SoftDeletes, Billable;
 
     /**
      * The attributes that are mass assignable.
@@ -43,7 +43,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'email',
         'password',
         'email_verification_token',
-        'last_login_at', 
+        'last_login_at',
         'default_payment_method',
         'status', // e.g., 'active', 'inactive', 'banned'
     ];
@@ -75,6 +75,12 @@ class User extends Authenticatable implements MustVerifyEmail
         ];
     }
 
+    public function activeSessions()
+    {
+        return $this->hasMany(ActiveSession::class);
+    }
+
+
     public $incrementing = false; // Important for non-integer primary keys
     protected $keyType = 'string'; // ULIDs are strings
 
@@ -94,10 +100,10 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->morphToMany(Role::class, 'model', 'model_has_roles', 'model_id', 'role_id');
     }
 
-public function permissions()
-{
-    return $this->morphToMany(Permission::class, 'model', 'model_has_permissions', 'model_id', 'permission_id');
-}
+    public function permissions()
+    {
+        return $this->morphToMany(Permission::class, 'model', 'model_has_permissions', 'model_id', 'permission_id');
+    }
 
     public function viewedCategories()
     {

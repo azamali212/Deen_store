@@ -5,7 +5,6 @@ namespace App\Repositories\User;
 use App\Jobs\LogUserActionJob;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -13,19 +12,21 @@ use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Str;
-use App\Exceptions\UserCreationException;
 use App\Models\UserLogAction;
 use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Notification;
 
 class UserRepository implements UserRepositoryInterface
 {
-
-
+    /**
+     * Get all users with optional filters, sorting, and pagination.
+     *
+     * @param $request
+     * @return LengthAwarePaginator
+     */
     public function getAllUsers($request): LengthAwarePaginator
     {
         $query = User::query();
