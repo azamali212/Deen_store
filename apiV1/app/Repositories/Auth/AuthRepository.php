@@ -88,6 +88,13 @@ class AuthRepository implements AuthRepositoryInterface
             ], 401);
         }
 
+        // Check if user is deactivated
+        if ($user->status === 'inactive') {
+            return response()->json([
+                'message' => 'Your account has been deactivated. Please contact support.'
+            ], 403);
+        }
+
         // Determine guard based on role if not specified
         $guard = $guard ?: $this->getDefaultGuardForRole($user->getRoleNames()->first());
 
@@ -127,6 +134,7 @@ class AuthRepository implements AuthRepositoryInterface
             'tab_session_id' => $tabSessionId, // Return to client for tab identification
         ]);
     }
+
     public function getCurrentGuard($tokenName)
     {
         return Cache::get("auth:guard:{$tokenName}");
@@ -214,6 +222,44 @@ class AuthRepository implements AuthRepositoryInterface
         }
 
         throw new \Exception("Invalid or expired token");
+    }
+
+    public function resendVerificationEmail($email)
+    {
+        $user = User::where('email', $email)
+            ->whereNull('email_verified_at')
+            ->first();
+
+        if (!$user) {
+            throw new \Exception("User not found or already verified");
+        }
+
+        // Create a rate limiter key specific to this user's email verification requests
+        $key = 'email_verification:' . $user->id;
+        $maxAttempts = 1; // Only allow one request per period
+        $decayHours = 24; // 24-hour cooldown
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            $seconds = RateLimiter::availableIn($key);
+            $hours = ceil($seconds / 3600);
+
+            throw new \Exception("You can only request a verification email once every 24 hours. Please try again in {$hours} hours.");
+        }
+
+        // If they haven't hit the limit, proceed with sending
+        RateLimiter::hit($key, $decayHours * 3600);
+
+        // Generate new token if you want to invalidate old ones (optional)
+        $user->email_verification_token = Str::random(60);
+        $user->save();
+
+        // Send verification email (you'll need to implement this notification)
+        $user->notify(new \App\Notifications\VerifyEmailNotification($user->email_verification_token));
+
+        return response()->json([
+            'message' => 'Verification email resent successfully',
+            'next_request_allowed_in' => $decayHours . ' hours'
+        ]);
     }
 
     public function forgotPassword($email)

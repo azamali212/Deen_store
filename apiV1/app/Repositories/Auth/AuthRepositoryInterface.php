@@ -18,4 +18,5 @@ interface AuthRepositoryInterface {
     public function switchRole(User $user, string $role);
     public function getValidGuardsForRole($role);
     public function getDefaultGuardForRole($role);
+    public function resendVerificationEmail($email);
 }

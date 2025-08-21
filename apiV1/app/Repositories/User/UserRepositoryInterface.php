@@ -2,6 +2,7 @@
 
 namespace App\Repositories\User;
 
+use App\Models\User;
 use App\Models\UserLogAction;
 use Illuminate\Http\JsonResponse;
 
@@ -99,7 +100,7 @@ interface UserRepositoryInterface
      * @param int $id
      * @return \App\Models\User
      */
-    public function activateUser(string $id): bool;
+    public function revokeAllTokens(User $user): void;
 
     /**
      * Deactivate a user (set inactive status), with potential additional logic like session invalidation.
@@ -107,7 +108,8 @@ interface UserRepositoryInterface
      * @param int $id
      * @return \App\Models\User
      */
-    public function deactivateUser(string $id): bool;
+    public function deactivateUser($userId, User $deactivatedBy, string $reason = ''): User;
+    public function activateUser($userId, User $activatedBy, string $reason = ''): User;
 
     /**
      * Batch delete users (soft delete) based on given criteria with validation.
@@ -140,6 +142,7 @@ interface UserRepositoryInterface
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function getInactiveUsers($days);
+    public function getDeactivationHistory(User $user);
 
     /**
      * Retrieve users based on advanced criteria like account age, last login, etc.
@@ -188,4 +191,12 @@ interface UserRepositoryInterface
     public function bulkDeleteSoftDeletedUsers(array $userIds): array;
 
     public function restoreAllUsers(): array;
+
+    public function assignRolesToUser(int $userId, array $roles, bool $sync = true): User;
+
+    public function removeRolesFromUser(int $userId, array $roles): User;
+
+    public function revokePermissionsFromUser(string $userId, array $permissions): JsonResponse;
+
+    public function syncUserPermissions(string $userId, array $permissions): User;
 }

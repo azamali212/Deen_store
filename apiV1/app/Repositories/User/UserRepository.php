@@ -13,8 +13,9 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Illuminate\Support\Str;
 use App\Models\UserLogAction;
+use App\Notifications\UserActivatedNotification;
+use App\Notifications\UserDeactivatedNotification;
 use Exception;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -261,7 +262,7 @@ class UserRepository implements UserRepositoryInterface
                     'message' => 'This user has active product listings. Please remove or deactivate the listings before deleting.'
                 ], 400);
             }*/
-    public function deleteUser($id)
+    public function deleteUser($id): JsonResponse
     {
         // Start a transaction to ensure data consistency
         DB::beginTransaction();
@@ -269,15 +270,6 @@ class UserRepository implements UserRepositoryInterface
         try {
             // Step 1: Find the user by ID and load their roles
             $user = User::with('roles')->findOrFail($id);
-
-            // Check if the user has roles
-            if ($user->roles->isEmpty()) {
-                // If the user has no roles, log this information
-                Log::warning('User has no roles', [
-                    'user_id' => $user->id,
-                    'user_name' => $user->name,
-                ]);
-            }
 
             // If the user has restricted roles (Admin, Super Admin), prevent deletion
             if ($user->hasRole(['Admin', 'Super Admin'])) {
@@ -287,12 +279,6 @@ class UserRepository implements UserRepositoryInterface
                 ], 403);
             }
 
-            // Log the deletion attempt for auditing purposes
-            Log::info("User deletion initiated", [
-                'user_id' => $user->id,
-                'user_name' => $user->name,
-                'roles' => $user->roles->pluck('name')->toArray(),
-            ]);
 
             // Step 5: Delete the user
             $user->delete();
@@ -300,11 +286,6 @@ class UserRepository implements UserRepositoryInterface
             // Commit the transaction
             DB::commit();
 
-            // Log the successful deletion
-            Log::info("User successfully deleted", [
-                'user_id' => $user->id,
-                'user_name' => $user->name,
-            ]);
 
             // Return success response with user details and roles
             return response()->json([
@@ -813,56 +794,7 @@ class UserRepository implements UserRepositoryInterface
     }
 
 
-    public function activateUser(string $id): bool
-    {
-        try {
-            $user = User::findOrFail($id);
 
-            if ($user->status === 'active') {
-                Log::info("User [$id] is already active.");
-                return false;
-            }
-
-            $user->status = 'active';
-            $user->email_verified_at = now(); // Set email_verified_at to the current time
-            $user->last_login_at = now(); // Set last_login_at to the current time
-            $user->save(); // Save the changes
-
-            Log::info("User [$id] activated successfully.");
-
-            return true;
-        } catch (ModelNotFoundException $e) {
-            Log::error("User with ID [$id] not found.");
-            throw new Exception("User not found.", 404);
-        } catch (Exception $e) {
-            Log::error("Error activating user [$id]: " . $e->getMessage());
-            throw new Exception("Failed to activate user.", 500);
-        }
-    }
-    public function deactivateUser(string $id): bool
-    {
-        try {
-            $user = User::findOrFail($id);
-
-            if ($user->status === 'inactive') {
-                Log::info("User [$id] is already inactive.");
-                return false;
-            }
-
-            $user->status = 'inactive';
-            $user->save(); // Save the changes
-
-            Log::info("User [$id] deactivated successfully.");
-
-            return true;
-        } catch (ModelNotFoundException $e) {
-            Log::error("User with ID [$id] not found.");
-            throw new Exception("User not found.", 404);
-        } catch (Exception $e) {
-            Log::error("Error deactivating user [$id]: " . $e->getMessage());
-            throw new Exception("Failed to deactivate user.", 500);
-        }
-    }
     // Repository Method
     // Repository
     public function batchDeleteUsers(array $userIds)
@@ -974,6 +906,7 @@ class UserRepository implements UserRepositoryInterface
             return 0;  // Return 0 in case of an error
         }
     }
+
     public function getInactiveUsers($days)
     {
         try {
@@ -1132,6 +1065,349 @@ class UserRepository implements UserRepositoryInterface
             DB::rollBack(); // Rollback if any error occurs
             Log::error('Error assigning permissions to user: ' . $e->getMessage());
             return null; // Return null in case of an error
+        }
+    }
+
+    //Assgin Users Role to user 
+    /**
+     * Assign roles to a user with validation and logging
+     *
+     * @param int $userId
+     * @param array $roles Array of role names to assign
+     * @param bool $sync Whether to sync (replace) or add roles
+     * @return User
+     * @throws Exception
+     */
+    public function assignRolesToUser(int $userId, array $roles, bool $sync = true): User
+    {
+        DB::beginTransaction();
+
+        try {
+            // Find the user
+            $user = User::findOrFail($userId);
+
+            // Validate roles exist
+            $validRoles = Role::whereIn('name', $roles)->get();
+
+            if ($validRoles->count() !== count($roles)) {
+                $invalidRoles = array_diff($roles, $validRoles->pluck('name')->toArray());
+                throw new Exception("Invalid roles provided: " . implode(', ', $invalidRoles));
+            }
+
+            // Get current roles for logging
+            $currentRoles = $user->roles->pluck('name')->toArray();
+
+            // Assign roles
+            if ($sync) {
+                $user->syncRoles($validRoles);
+            } else {
+                foreach ($validRoles as $role) {
+                    if (!$user->hasRole($role->name)) {
+                        $user->assignRole($role);
+                    }
+                }
+            }
+
+            // Log the role assignment
+            Log::info("User roles " . ($sync ? "synced" : "added"), [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'previous_roles' => $currentRoles,
+                'new_roles' => $roles,
+                'action_by' => Auth::id(),
+            ]);
+
+            // Dispatch job for async logging if needed
+            $this->logUserAction(
+                $user->id,
+                $sync ? 'roles_synced' : 'roles_added',
+                [
+                    'previous_roles' => $currentRoles,
+                    'new_roles' => $roles
+                ]
+            );
+
+            DB::commit();
+
+            return $user->load('roles');
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error("Failed to assign roles to user {$userId}: " . $e->getMessage());
+            throw new Exception("Failed to assign roles: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Remove specific roles from a user
+     *
+     * @param int $userId
+     * @param array $roles Array of role names to remove
+     * @return User
+     * @throws Exception
+     */
+    public function removeRolesFromUser(int $userId, array $roles): User
+    {
+        DB::beginTransaction();
+
+        try {
+            $user = User::findOrFail($userId);
+            $currentRoles = $user->roles->pluck('name')->toArray();
+
+            foreach ($roles as $roleName) {
+                if ($user->hasRole($roleName)) {
+                    $user->removeRole($roleName);
+                }
+            }
+
+            // Log the role removal
+            Log::info("Roles removed from user", [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'removed_roles' => $roles,
+                'remaining_roles' => $user->roles->pluck('name')->toArray(),
+                'action_by' => Auth::id(),
+            ]);
+
+            DB::commit();
+
+            return $user->load('roles');
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error("Failed to remove roles from user {$userId}: " . $e->getMessage());
+            throw new Exception("Failed to remove roles: " . $e->getMessage());
+        }
+    }
+
+    public function deactivateUser($userId, User $deactivatedBy, string $reason = ''): User
+    {
+        DB::beginTransaction();
+
+        try {
+            $user = User::findOrFail($userId);
+
+            if ($user->id === $deactivatedBy->id) {
+                throw new Exception('You cannot deactivate your own account');
+            }
+
+            // Update user status and deactivation info
+            $user->update([
+                'status' => 'inactive',
+                'deactivated_at' => now(),
+                'deactivated_by' => $deactivatedBy->id,
+                'deactivation_reason' => $reason
+            ]);
+
+            // Revoke all active tokens (forces logout)
+            $this->revokeAllTokens($user);
+
+            // Clear any cached authentication data
+            $this->clearUserGuardCache($user);
+
+            // Notify the user
+            $user->notify(new UserDeactivatedNotification($user, $deactivatedBy, $reason));
+
+            // Log the action
+            $this->logUserAction(
+                $deactivatedBy->id,
+                'user_deactivated',
+                [
+                    'event_type' => 'user_management',
+                    'status' => 'success',
+                    'details' => "User {$user->email} deactivated",
+                    'reference' => $user,
+                    'deactivation_reason' => $reason
+                ]
+            );
+
+            DB::commit();
+
+            return $user;
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error deactivating user: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public function activateUser($userId, User $activatedBy, string $reason = ''): User
+    {
+        DB::beginTransaction();
+
+        try {
+            $user = User::findOrFail($userId);
+
+            $user->update([
+                'status' => 'active',
+                'deactivated_at' => null,
+                'deactivated_by' => null,
+                'deactivation_reason' => null
+            ]);
+
+            $user->notify(new UserActivatedNotification($user, $activatedBy, $reason));
+
+            $this->logUserAction(
+                $activatedBy->id,
+                'user_activated',
+                [
+                    'event_type' => 'user_management',
+                    'status' => 'success',
+                    'details' => "User {$user->email} activated",
+                    'reference' => $user,
+                    'activation_reason' => $reason
+                ]
+            );
+
+            DB::commit();
+
+            return $user;
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error activating user: ' . $e->getMessage());
+            throw $e; // Re-throw the exception for the controller to handle
+        }
+    }
+
+    public function revokeAllTokens(User $user): void
+    {
+        // Delete all of the user's tokens
+        $user->tokens()->delete();
+
+        // Clear any cached authentication data
+        $this->clearUserGuardCache($user);
+    }
+
+    public function getDeactivationHistory(User $user)
+    {
+        return $user->audits()
+            ->where('event', 'deactivated')
+            ->orderBy('created_at', 'desc')
+            ->get();
+    }
+
+    protected function clearUserGuardCache(User $user): void
+    {
+        foreach ($user->tokens as $token) {
+            Cache::forget("auth:guard:{$token->name}");
+        }
+    }
+
+    //Revoke Permissions From User
+    public function revokePermissionsFromUser(string $userId, array $permissions): JsonResponse
+    {
+        DB::beginTransaction();
+
+        try {
+            // Find the user by ID (ULID)
+            $user = User::find($userId);
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "User not found with ID: {$userId}"
+                ], 404);
+            }
+
+            // Validate permissions exist
+            $validPermissions = Permission::whereIn('name', $permissions)->get();
+            if ($validPermissions->count() !== count($permissions)) {
+                $invalidPermissions = array_diff($permissions, $validPermissions->pluck('name')->toArray());
+                return response()->json([
+                    'success' => false,
+                    'message' => "Invalid permissions provided: " . implode(', ', $invalidPermissions)
+                ], 400);
+            }
+
+            // Get current permissions for logging
+            $currentPermissions = $user->getAllPermissions()->pluck('name')->toArray();
+
+            // Revoke permissions
+            foreach ($validPermissions as $permission) {
+                if ($user->hasPermissionTo($permission)) {
+                    $user->revokePermissionTo($permission);
+                }
+            }
+
+            // Log the permission revocation
+            Log::info("Permissions revoked from user", [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'revoked_permissions' => $permissions,
+                'remaining_permissions' => $user->getAllPermissions()->pluck('name')->toArray(),
+                'action_by' => Auth::id(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Permissions revoked successfully',
+                'data' => [
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email
+                    ],
+                    'revoked_permissions' => $permissions,
+                    'remaining_permissions' => $user->getAllPermissions()->pluck('name')->toArray()
+                ]
+            ]);
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error("Failed to revoke permissions from user {$userId}: " . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => "Failed to revoke permissions: " . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    //Replace all Permsissions (sync)
+    public function syncUserPermissions(string $userId, array $permissions): User
+    {
+        DB::beginTransaction();
+
+        try {
+            $user = User::find($userId); // Changed from findOrFail to handle ULID
+
+            if (!$user) {
+                throw new Exception("User not found with ID: {$userId}");
+            }
+
+            // Rest of the method remains the same...
+            $validPermissions = Permission::whereIn('name', $permissions)->get();
+            if ($validPermissions->count() !== count($permissions)) {
+                $invalidPermissions = array_diff($permissions, $validPermissions->pluck('name')->toArray());
+                throw new Exception("Invalid permissions provided: " . implode(', ', $invalidPermissions));
+            }
+
+            $currentPermissions = $user->getAllPermissions()->pluck('name')->toArray();
+            $user->syncPermissions($validPermissions);
+
+            Log::info("User permissions synced", [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'previous_permissions' => $currentPermissions,
+                'new_permissions' => $permissions,
+                'action_by' => Auth::id(),
+            ]);
+
+            $this->logUserAction(
+                $user->id,
+                'permissions_synced',
+                [
+                    'previous_permissions' => $currentPermissions,
+                    'new_permissions' => $permissions
+                ]
+            );
+
+            DB::commit();
+
+            return $user->load('permissions');
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error("Failed to sync permissions for user {$userId}: " . $e->getMessage());
+            throw new Exception("Failed to sync permissions: " . $e->getMessage());
         }
     }
 }

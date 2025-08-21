@@ -30,6 +30,7 @@ use Spatie\Permission\Traits\HasRoles;
  */
 class User extends Authenticatable implements MustVerifyEmail
 {
+    use Notifiable;
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasApiTokens, HasRoles, SoftDeletes, Billable;
 
@@ -46,6 +47,9 @@ class User extends Authenticatable implements MustVerifyEmail
         'last_login_at',
         'default_payment_method',
         'status', // e.g., 'active', 'inactive', 'banned'
+        'deactivated_at',
+        'deactivated_by',
+        'deactivation_reason'
     ];
 
     protected $guard_name = 'api';
@@ -78,6 +82,42 @@ class User extends Authenticatable implements MustVerifyEmail
     public function activeSessions()
     {
         return $this->hasMany(ActiveSession::class);
+    }
+
+
+    // Relationship to the user who deactivated this account
+    public function deactivatedByUser()
+    {
+        return $this->belongsTo(User::class, 'deactivated_by');
+    }
+
+
+    // Scope for active users
+    public function scopeActive($query)
+    {
+        return $query->where('status', true);
+    }
+
+    // Scope for inactive users
+    public function scopeInactive($query)
+    {
+        return $query->where('status', false);
+    }
+
+    // Check if user is active
+    protected $casts = [
+        'status' => 'string',
+        'deactivated_at' => 'datetime',
+    ];
+
+    public function isActive(): bool
+    {
+        return $this->status === 'active';
+    }
+
+    public function isDeactivated(): bool
+    {
+        return $this->status === 'inactive' && $this->deactivated_at !== null;
     }
 
 

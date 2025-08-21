@@ -48,7 +48,7 @@ class UserController extends Controller
                 'total_users'     => $totalUsers,
                 'active_users'    => $activeUsers,
                 'inactive_users'  => $inactiveUsers,
-                'admin_users'     => $adminUsers,
+                'admin_users'     =>   $adminUsers,
                 'customer_users'  => $customerUsers,
             ]
         ]);
@@ -130,6 +130,7 @@ class UserController extends Controller
             ], 500);
         }
     }
+
     public function deleteUser($id)
     {
         $user = $this->userRepository->deleteUser($id);
@@ -162,6 +163,7 @@ class UserController extends Controller
             ], 500);
         }
     }
+
     public function restoreUser($id)
     {
         try {
@@ -184,6 +186,7 @@ class UserController extends Controller
             ], 500);
         }
     }
+
     public function forceDeleteUser($id)
     {
         $user = $this->userRepository->forceDeleteUser($id);
@@ -304,48 +307,6 @@ class UserController extends Controller
         return response()->json([
             'message' => 'User action logged successfully.'
         ], 200);
-    }
-
-    public function userActive(string $id)
-    {
-        try {
-            $activated = $this->userRepository->activateUser($id);
-
-            if (!$activated) {
-                return response()->json([
-                    'message' => 'User already active.',
-                ], 200);
-            }
-
-            return response()->json([
-                'message' => 'User activated successfully.',
-            ], 200);
-        } catch (Exception $e) {
-            return response()->json([
-                'message' => $e->getMessage(),
-            ], $e->getCode() ?: 500);
-        }
-    }
-
-    public function userInActive(string $id)
-    {
-        try {
-            $deactivated = $this->userRepository->deactivateUser($id);
-
-            if (!$deactivated) {
-                return response()->json([
-                    'message' => 'User already inactive.',
-                ], 200);
-            }
-
-            return response()->json([
-                'message' => 'User deactivated successfully.',
-            ], 200);
-        } catch (Exception $e) {
-            return response()->json([
-                'message' => $e->getMessage(),
-            ], $e->getCode() ?: 500);
-        }
     }
 
     public function batchDeleteUsers(Request $request): JsonResponse
@@ -593,6 +554,206 @@ class UserController extends Controller
             return response()->json([
                 'message' => 'Failed to assign permissions.',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function assignRoles(Request $request, $userId): JsonResponse
+    {
+        // Convert userId to integer
+        $userId = (int)$userId;
+
+        $validated = $request->validate([
+            'roles' => 'required|array',
+            'roles.*' => 'string|exists:roles,name',
+            'sync' => 'boolean'
+        ]);
+
+        try {
+            $user = $this->userRepository->assignRolesToUser(
+                $userId,
+                $validated['roles'],
+                $validated['sync'] ?? true
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Roles assigned successfully',
+                'data' => [
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email
+                    ],
+                    'roles' => $user->roles->pluck('name')
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Role assignment failed: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 422);
+        }
+    }
+
+    public function removeRoles(Request $request, int $userId): JsonResponse
+    {
+        $validated = $request->validate([
+            'roles' => 'required|array',
+            'roles.*' => 'string|exists:roles,name'
+        ]);
+
+        try {
+            $user = $this->userRepository->removeRolesFromUser(
+                $userId,
+                $validated['roles']
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Roles removed successfully',
+                'data' => [
+                    'user' => $user,
+                    'remaining_roles' => $user->roles->pluck('name')
+                ]
+            ]);
+        } catch (Exception $e) {
+            Log::error("Role removal failed: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 422);
+        }
+    }
+
+    public function deactivateUser(Request $request, $userId): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'reason' => 'nullable|string|max:255'
+            ]);
+
+            $deactivatedBy = $request->user();
+            $reason = $validated['reason'] ?? '';
+
+            $user = $this->userRepository->deactivateUser($userId, $deactivatedBy, $reason);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User deactivated successfully',
+                'data' => $user
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function activateUser(Request $request, $userId): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'reason' => 'nullable|string|max:255'
+            ]);
+
+            $activatedBy = $request->user();
+            $reason = $validated['reason'] ?? '';
+
+            $user = $this->userRepository->activateUser($userId, $activatedBy, $reason);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User activated successfully',
+                'data' => $user
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function revokePermissions(Request $request, string $userId): JsonResponse
+    {
+        $validated = $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*' => 'string|exists:permissions,name'
+        ]);
+    
+        try {
+            $response = $this->userRepository->revokePermissionsFromUser(
+                $userId, // No need to convert to int
+                $validated['permissions']
+            );
+    
+            return $response;
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            Log::error("Permission revocation failed: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function syncPermissions(Request $request, $userId): JsonResponse
+    {
+        $validated = $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*' => 'string|exists:permissions,name'
+        ]);
+    
+        try {
+            $user = $this->userRepository->syncUserPermissions(
+                $userId, // No longer converting to int
+                $validated['permissions']
+            );
+    
+            return response()->json([
+                'success' => true,
+                'message' => 'Permissions synced successfully',
+                'data' => [
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email
+                    ],
+                    'permissions' => $user->getAllPermissions()->pluck('name')
+                ]
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (Exception $e) {
+            Log::error("Permission sync failed: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
             ], 500);
         }
     }

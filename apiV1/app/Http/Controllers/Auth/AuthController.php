@@ -83,6 +83,18 @@ class AuthController extends Controller
             return response()->json(['error' => 'Failed to send welcome email: ' . $e->getMessage()], 400);
         }
     }
+
+    public function resendVerificationEmail(Request $request)
+    {
+        $request->validate(['email' => 'required|email']);
+
+        try {
+            return $this->authRepository->resendVerificationEmail($request->email);
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 400);
+        }
+    }
+
     public function switchRole(Request $request, AuthRepository $authRepository)
     {
         $request->validate(['role' => 'required|string']);
