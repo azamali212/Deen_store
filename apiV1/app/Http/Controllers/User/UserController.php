@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Exception;
+use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
@@ -560,8 +561,6 @@ class UserController extends Controller
 
     public function assignRoles(Request $request, $userId): JsonResponse
     {
-        // Convert userId to integer
-        $userId = (int)$userId;
 
         $validated = $request->validate([
             'roles' => 'required|array',
@@ -594,6 +593,51 @@ class UserController extends Controller
                 'success' => false,
                 'message' => $e->getMessage()
             ], 422);
+        }
+    }
+
+    /**
+     * Sync user roles with optional sync behavior
+     *
+     * @param Request $request
+     * @param string $userId
+     * @return JsonResponse
+     */
+    // app/Http/Controllers/UserRoleController.php
+    public function syncRoles(Request $request, string $userId)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'roles' => 'required|array',
+                'roles.*' => 'string|max:255',
+                'sync' => 'boolean'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $roles = $request->input('roles');
+            $sync = $request->input('sync', true);
+
+            // Use the repository method
+            $result = $this->userRepository->syncUserRoles($userId, $roles, $sync);
+
+            if ($result['success']) {
+                return response()->json($result, 200);
+            } else {
+                return response()->json($result, 400);
+            }
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while syncing roles',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -689,7 +733,7 @@ class UserController extends Controller
         }
     }
 
-    public function revokePermissions(Request $request, string $userId): JsonResponse
+    /* public function revokePermissions(Request $request, string $userId): JsonResponse
     {
         $validated = $request->validate([
             'permissions' => 'required|array',
@@ -756,5 +800,5 @@ class UserController extends Controller
                 'message' => $e->getMessage()
             ], 500);
         }
-    }
+    } */
 }

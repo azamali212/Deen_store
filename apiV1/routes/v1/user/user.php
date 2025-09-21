@@ -38,10 +38,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/users/assign-permissions', [UserController::class, 'assignPermissionsToUser']);  // POST 
 
     //User Assgin Role and Remove Role and Change Role
-    Route::post('/users/{user}/roles', [UserController::class, 'assignRoles'])
-        ->where('user', '[0-9]+'); // Ensure the parameter is numeric
+    Route::post('/users/{user}/roles', [UserController::class, 'assignRoles']);
     Route::delete('/users/{userId}/roles', [UserController::class, 'removeRoles']);
     Route::patch('/user/{id}/userRole', [UserController::class, 'changeUserRole']);
+    Route::post('/user/{userId}/sync-roles', [UserController::class, 'syncRoles']);
 
     Route::post('/users/{userId}/deactivate', [UserController::class, 'deactivateUser']);
     Route::post('/users/{userId}/activate', [UserController::class, 'activateUser']);

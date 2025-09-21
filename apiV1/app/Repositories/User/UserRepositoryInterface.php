@@ -192,11 +192,15 @@ interface UserRepositoryInterface
 
     public function restoreAllUsers(): array;
 
-    public function assignRolesToUser(int $userId, array $roles, bool $sync = true): User;
+    public function assignRolesToUser(string $userId, array $roles, bool $sync = true): User;
+
+    public function syncUserRoles(string $userId, array $roles, bool $sync = true): array;
 
     public function removeRolesFromUser(int $userId, array $roles): User;
 
-    public function revokePermissionsFromUser(string $userId, array $permissions): JsonResponse;
+    //public function revokePermissionsFromUser(string $userId, array $permissions): JsonResponse;
 
-    public function syncUserPermissions(string $userId, array $permissions): User;
+    //public function syncUserPermissions(string $userId, array $permissions): User;
+
+
 }

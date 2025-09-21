@@ -72,27 +72,44 @@ class UserRepository implements UserRepositoryInterface
      */
     public function getUserById($id, $relations = [])
     {
-        $requestedRelations = request()->query('relations');
-        if (is_string($requestedRelations)) {
-            $relations = array_map('trim', explode(',', $requestedRelations));
-        }
-
         $user = User::with(['roles.permissions'])->find($id);
 
         if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'User not found'
-            ], 404);
+            return null; // Return null instead of array for consistency
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'user' => $user,
-                'permissions' => $user->getAllPermissions(),
-            ]
-        ]);
+        // Get all permissions (both role-based and direct)
+        $allPermissions = $user->getAllPermissions();
+
+        // Return the formatted array
+        return [
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'location' => $user->location,
+                'email_verified_at' => $user->email_verified_at,
+                'status' => $user->status,
+                'last_login_at' => $user->last_login_at,
+                'created_at' => $user->created_at,
+                'updated_at' => $user->updated_at,
+                'roles' => $user->roles->map(function ($role) {
+                    return [
+                        'id' => $role->id,
+                        'name' => $role->name,
+                        'slug' => $role->slug,
+                        'permissions' => $role->permissions->map(function ($permission) {
+                            return [
+                                'id' => $permission->id,
+                                'name' => $permission->name,
+                                'slug' => $permission->slug
+                            ];
+                        })
+                    ];
+                }),
+
+            ],
+        ];
     }
 
     /**
@@ -1078,12 +1095,12 @@ class UserRepository implements UserRepositoryInterface
      * @return User
      * @throws Exception
      */
-    public function assignRolesToUser(int $userId, array $roles, bool $sync = true): User
+    public function assignRolesToUser(string $userId, array $roles, bool $sync = true): User
     {
         DB::beginTransaction();
 
         try {
-            // Find the user
+            // Find the user using the string ID
             $user = User::findOrFail($userId);
 
             // Validate roles exist
@@ -1134,6 +1151,105 @@ class UserRepository implements UserRepositoryInterface
             DB::rollBack();
             Log::error("Failed to assign roles to user {$userId}: " . $e->getMessage());
             throw new Exception("Failed to assign roles: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Sync roles for a user with optional sync/replace behavior
+     *
+     * @param string $userId
+     * @param array $roles Array of role names
+     * @param bool $sync Whether to sync (replace) or add roles
+     * @return array
+     * @throws Exception
+     */
+    public function syncUserRoles(string $userId, array $roles, bool $sync = true): array
+    {
+        DB::beginTransaction();
+
+        try {
+            // Find the user
+            $user = User::findOrFail($userId);
+
+            // Validate roles exist
+            $validRoles = Role::whereIn('name', $roles)->get();
+
+            if ($validRoles->count() !== count($roles)) {
+                $invalidRoles = array_diff($roles, $validRoles->pluck('name')->toArray());
+                throw new Exception("Invalid roles provided: " . implode(', ', $invalidRoles));
+            }
+
+            // Get current roles for logging and response
+            $currentRoles = $user->roles->pluck('name')->toArray();
+
+            // Handle role assignment based on sync flag
+            if ($sync) {
+                // Replace all existing roles with new ones
+                $user->syncRoles($validRoles);
+                $action = 'roles_synced';
+                $message = 'Roles synced successfully';
+            } else {
+                // Add new roles to existing ones (avoid duplicates)
+                foreach ($validRoles as $role) {
+                    if (!$user->hasRole($role->name)) {
+                        $user->assignRole($role);
+                    }
+                }
+                $action = 'roles_added';
+                $message = 'Roles added successfully';
+            }
+
+            // Refresh to get updated roles
+            $user->refresh();
+            $updatedRoles = $user->roles->pluck('name')->toArray();
+
+            // Log the action
+            Log::info("User roles updated", [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'previous_roles' => $currentRoles,
+                'new_roles' => $roles,
+                'sync_mode' => $sync ? 'replace' : 'add',
+                'final_roles' => $updatedRoles,
+                'action_by' => Auth::id(),
+            ]);
+
+            // Dispatch async logging job
+            $this->logUserAction(
+                $user->id,
+                $action,
+                [
+                    'previous_roles' => $currentRoles,
+                    'new_roles' => $roles,
+                    'sync_mode' => $sync,
+                    'final_roles' => $updatedRoles
+                ]
+            );
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'message' => $message,
+                'data' => [
+                    'user_id' => $user->id,
+                    'user_name' => $user->name,
+                    'previous_roles' => $currentRoles,
+                    'new_roles' => $roles,
+                    'final_roles' => $updatedRoles,
+                    'sync_mode' => $sync ? 'replace' : 'add',
+                    'roles' => $roles,
+                ]
+            ];
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error("Failed to sync roles for user {$userId}: " . $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => "Failed to sync roles: " . $e->getMessage(),
+                'error' => $e->getMessage()
+            ];
         }
     }
 
@@ -1292,103 +1408,41 @@ class UserRepository implements UserRepositoryInterface
     }
 
     //Revoke Permissions From User
-    public function revokePermissionsFromUser(string $userId, array $permissions): JsonResponse
+    /* ß */
+
+    // Also fix the syncUserPermissions method
+    /* public function syncUserPermissions(string $userId, array $permissions): User
     {
         DB::beginTransaction();
 
         try {
-            // Find the user by ID (ULID)
             $user = User::find($userId);
 
             if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "User not found with ID: {$userId}"
-                ], 404);
+                throw new Exception("User not found with ID: {$userId}");
             }
 
             // Validate permissions exist
             $validPermissions = Permission::whereIn('name', $permissions)->get();
             if ($validPermissions->count() !== count($permissions)) {
                 $invalidPermissions = array_diff($permissions, $validPermissions->pluck('name')->toArray());
-                return response()->json([
-                    'success' => false,
-                    'message' => "Invalid permissions provided: " . implode(', ', $invalidPermissions)
-                ], 400);
-            }
-
-            // Get current permissions for logging
-            $currentPermissions = $user->getAllPermissions()->pluck('name')->toArray();
-
-            // Revoke permissions
-            foreach ($validPermissions as $permission) {
-                if ($user->hasPermissionTo($permission)) {
-                    $user->revokePermissionTo($permission);
-                }
-            }
-
-            // Log the permission revocation
-            Log::info("Permissions revoked from user", [
-                'user_id' => $user->id,
-                'user_name' => $user->name,
-                'revoked_permissions' => $permissions,
-                'remaining_permissions' => $user->getAllPermissions()->pluck('name')->toArray(),
-                'action_by' => Auth::id(),
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Permissions revoked successfully',
-                'data' => [
-                    'user' => [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'email' => $user->email
-                    ],
-                    'revoked_permissions' => $permissions,
-                    'remaining_permissions' => $user->getAllPermissions()->pluck('name')->toArray()
-                ]
-            ]);
-        } catch (Exception $e) {
-            DB::rollBack();
-            Log::error("Failed to revoke permissions from user {$userId}: " . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => "Failed to revoke permissions: " . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    //Replace all Permsissions (sync)
-    public function syncUserPermissions(string $userId, array $permissions): User
-    {
-        DB::beginTransaction();
-
-        try {
-            $user = User::find($userId); // Changed from findOrFail to handle ULID
-
-            if (!$user) {
-                throw new Exception("User not found with ID: {$userId}");
-            }
-
-            // Rest of the method remains the same...
-            $validPermissions = Permission::whereIn('name', $permissions)->get();
-            if ($validPermissions->count() !== count($permissions)) {
-                $invalidPermissions = array_diff($permissions, $validPermissions->pluck('name')->toArray());
                 throw new Exception("Invalid permissions provided: " . implode(', ', $invalidPermissions));
             }
 
-            $currentPermissions = $user->getAllPermissions()->pluck('name')->toArray();
+            // Get current DIRECT permissions for logging
+            $currentDirectPermissions = $user->permissions->pluck('name')->toArray();
+
+            // Sync DIRECT permissions
             $user->syncPermissions($validPermissions);
+
+            // Refresh to get updated permissions
+            $user->refresh();
 
             Log::info("User permissions synced", [
                 'user_id' => $user->id,
                 'user_name' => $user->name,
-                'previous_permissions' => $currentPermissions,
-                'new_permissions' => $permissions,
+                'previous_direct_permissions' => $currentDirectPermissions,
+                'new_direct_permissions' => $permissions,
                 'action_by' => Auth::id(),
             ]);
 
@@ -1396,8 +1450,8 @@ class UserRepository implements UserRepositoryInterface
                 $user->id,
                 'permissions_synced',
                 [
-                    'previous_permissions' => $currentPermissions,
-                    'new_permissions' => $permissions
+                    'previous_direct_permissions' => $currentDirectPermissions,
+                    'new_direct_permissions' => $permissions
                 ]
             );
 
@@ -1409,5 +1463,5 @@ class UserRepository implements UserRepositoryInterface
             Log::error("Failed to sync permissions for user {$userId}: " . $e->getMessage());
             throw new Exception("Failed to sync permissions: " . $e->getMessage());
         }
-    }
+    } */
 }
