@@ -8,6 +8,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use App\Notifications\VerifyEmail;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Cashier\Billable;
 use Laravel\Sanctum\HasApiTokens;
@@ -185,5 +186,102 @@ class User extends Authenticatable implements MustVerifyEmail
     public function emailStatuses()
     {
         return $this->hasManyThrough(Email_Status::class, Email::class);
+    }
+
+    // In User model
+    public function temporaryPermissions()
+    {
+        return $this->hasMany(Temporary_Permissions::class);
+    }
+
+    public function getActiveTemporaryPermissionsAttribute()
+    {
+        return $this->temporaryPermissions()
+            ->with('permission')
+            ->active()
+            ->get();
+    }
+
+    public function activeTemporaryPermissions()
+    {
+        return $this->temporaryPermissions()
+            ->with('permission')
+            ->where('is_active', true)
+            ->where('expires_at', '>', Carbon::now())
+            ->whereNull('revoked_at');
+    }
+
+    /**
+     * Check if user has a specific permission (including temporary)
+     */
+    public function hasAnyPermission($permissionName): bool
+    {
+        // Check direct permissions
+        if ($this->hasDirectPermission($permissionName)) {
+            return true;
+        }
+
+        // Check role permissions
+        if ($this->hasPermissionTo($permissionName)) {
+            return true;
+        }
+
+        // Check temporary permissions
+        return $this->hasTemporaryPermission($permissionName);
+    }
+
+    /**
+     * Check if user has temporary permission
+     */
+    public function hasTemporaryPermission($permissionName): bool
+    {
+        return $this->temporaryPermissions()
+            ->whereHas('permission', function ($query) use ($permissionName) {
+                $query->where('name', $permissionName);
+            })
+            ->where('is_active', true)
+            ->where('expires_at', '>', Carbon::now())
+            ->whereNull('revoked_at')
+            ->exists();
+    }
+
+    /**
+     * Get all permission names (for frontend use)
+     */
+    public function getAllPermissionNames(): array
+    {
+        $directPermissions = $this->getDirectPermissions()->pluck('name');
+        $rolePermissions = $this->getPermissionsViaRoles()->pluck('name');
+        $temporaryPermissions = $this->activeTemporaryPermissions()->get()->pluck('permission.name');
+
+        return $directPermissions
+            ->merge($rolePermissions)
+            ->merge($temporaryPermissions)
+            ->unique()
+            ->values()
+            ->toArray();
+    }
+    /**
+     * Get complete permission data for frontend
+     */
+    public function getCompletePermissionData(): array
+    {
+        return [
+            'all_permissions' => $this->getAllPermissionNames(),
+            'direct_permissions' => $this->getDirectPermissions()->pluck('name')->toArray(),
+            'role_permissions' => $this->getPermissionsViaRoles()->pluck('name')->toArray(),
+            'temporary_permissions' => $this->activeTemporaryPermissions()->get()->map(function ($tempPerm) {
+                return [
+                    'id' => $tempPerm->id,
+                    'permission_name' => $tempPerm->permission->name,
+                    'permission_id' => $tempPerm->permission->id,
+                    'expires_at' => $tempPerm->expires_at->toISOString(),
+                    'reason' => $tempPerm->reason,
+                    'assigned_at' => $tempPerm->created_at->toISOString(),
+                    'assigned_by' => $tempPerm->assigned_by,
+                    'days_remaining' => $tempPerm->days_remaining
+                ];
+            })->toArray()
+        ];
     }
 }

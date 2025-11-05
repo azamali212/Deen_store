@@ -54,24 +54,29 @@ class UserController extends Controller
             ]
         ]);
     }
-    public function show($id, Request $request)
+    public function show($id): JsonResponse
     {
-        // Extract 'relations' from the query string if provided
-        $relations = $request->input('relations', []);
+        try {
+            $user = User::with([
+                'roles.permissions',
+                'permissions',
+                'temporaryPermissions.permission',
+                'temporaryPermissions.assignedBy'
+            ])->findOrFail($id);
 
-        // Call the repository method to fetch the user by ID with the given relations
-        $user = $this->userRepository->getUserById($id, $relations);
+            $permissionData = $user->getCompletePermissionData();
 
-        // If user is not found, return 404
-        if (!$user) {
-            return response()->json(['message' => 'User not found'], 404);
+            return response()->json([
+                'success' => true,
+                'user' => $user,
+                'permissions' => $permissionData
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found'
+            ], 404);
         }
-
-        // Return the user data
-        return response()->json([
-            'success' => true,
-            'data' => $user
-        ]);
     }
 
     public function createUser(Request $request)
@@ -539,6 +544,7 @@ class UserController extends Controller
 
         if (!$userId || empty($permissions)) {
             return response()->json([
+                'success' => false,
                 'message' => 'User ID and permissions are required.'
             ], 400);
         }
@@ -546,15 +552,25 @@ class UserController extends Controller
         try {
             $user = $this->userRepository->assignPermissionsToUser($userId, $permissions);
 
+            // Format the response to include permissions
             return response()->json([
+                'success' => true,
                 'message' => 'Permissions assigned successfully.',
-                'data' => $user
+                'data' => [
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                    ],
+                    'direct_permissions' => $user->permissions->pluck('name'),
+                    'all_permissions' => $user->getAllPermissions()->pluck('name') // This includes role + direct permissions
+                ]
             ], 200);
         } catch (Exception $e) {
             Log::error('Error assigning permissions to user: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Failed to assign permissions.',
-                'error' => $e->getMessage()
+                'success' => false,
+                'message' => $e->getMessage()
             ], 500);
         }
     }
@@ -801,4 +817,165 @@ class UserController extends Controller
             ], 500);
         }
     } */
+
+    // Add these methods to your UserController
+
+    /**
+     * Update assignTemporaryPermissions to return complete data
+     */
+    public function assignTemporaryPermissions(Request $request, $userId): JsonResponse
+    {
+        $validated = $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*' => 'string|exists:permissions,name',
+            'expires_at' => 'required|date|after:now',
+            'reason' => 'nullable|string|max:255'
+        ]);
+
+        try {
+            $assignedBy = $request->user();
+
+            $permissionsWithExpiry = [];
+            foreach ($validated['permissions'] as $permissionName) {
+                $permissionsWithExpiry[] = [
+                    'permission' => $permissionName,
+                    'expires_at' => $validated['expires_at']
+                ];
+            }
+
+            $result = $this->userRepository->assignTemporaryPermissions(
+                $userId,
+                $permissionsWithExpiry,
+                $assignedBy,
+                $validated['reason'] ?? null
+            );
+
+            // Reload user with complete permission data
+            $user = User::with([
+                'roles.permissions',
+                'permissions',
+                'temporaryPermissions.permission'
+            ])->findOrFail($userId);
+
+            $result['user'] = $user;
+            $result['permissions'] = $user->getCompletePermissionData();
+
+            return response()->json($result);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function revokeTemporaryPermissions(Request $request, $userId): JsonResponse
+    {
+        $validated = $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*' => 'string|exists:permissions,name',
+            'reason' => 'nullable|string|max:255'
+        ]);
+
+        try {
+            $revokedBy = $request->user();
+            $result = $this->userRepository->revokeTemporaryPermissions(
+                $userId,
+                $validated['permissions'],
+                $revokedBy,
+                $validated['reason'] ?? null
+            );
+
+            return response()->json($result);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getTemporaryPermissions($userId): JsonResponse
+    {
+        try {
+            $activePermissions = $this->userRepository->getActiveTemporaryPermissions($userId);
+            $allPermissions = $this->userRepository->getAllTemporaryPermissions($userId);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'active_temporary_permissions' => $activePermissions,
+                    'all_temporary_permissions' => $allPermissions
+                ]
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    //Clean up expired temporary permissions
+    public function cleanUpExpiredTemporaryPermissions(): JsonResponse
+    {
+        try {
+            $cleanedCount = $this->userRepository->cleanUpExpiredTemporaryPermissions();
+
+            return response()->json([
+                'success' => true,
+                'message' => "$cleanedCount expired temporary permissions cleaned up."
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    //Get Active Temporary Permissions for a User
+    public function getActiveTemporaryPermissions($userId): JsonResponse
+    {
+        try {
+            $activePermissions = $this->userRepository->getActiveTemporaryPermissions($userId);
+
+            return response()->json([
+                'success' => true,
+                'data' => $activePermissions
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Check if user has specific permission
+     */
+    public function checkPermission(Request $request, $userId): JsonResponse
+    {
+        $request->validate([
+            'permission' => 'required|string'
+        ]);
+
+        try {
+            $user = User::findOrFail($userId);
+            $hasPermission = $user->hasAnyPermission($request->permission);
+
+            return response()->json([
+                'has_permission' => $hasPermission,
+                'permission' => $request->permission,
+                'user_id' => $userId,
+                'user_name' => $user->name
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'has_permission' => false,
+                'error' => $e->getMessage()
+            ], 404);
+        }
+    }
 }

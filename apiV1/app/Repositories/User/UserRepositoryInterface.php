@@ -202,5 +202,15 @@ interface UserRepositoryInterface
 
     //public function syncUserPermissions(string $userId, array $permissions): User;
 
+    public function assignTemporaryPermissions($userId, array $permissionsWithExpiry, $assignedBy, $reason = null): array;
 
+    public function hasTemporaryPermission($userId, $permissionName): bool;
+
+    public function cleanupExpiredTemporaryPermissions(): int;
+
+    public function getAllTemporaryPermissions($userId);
+
+    public function getActiveTemporaryPermissions($userId);
+
+    public function revokeTemporaryPermissions($userId, array $permissionNames, $revokedBy, $reason = null): array;
 }

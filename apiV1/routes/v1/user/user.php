@@ -48,6 +48,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     Route::post('/users/{userId}/revoke-permissions', [UserController::class, 'revokePermissions']);
     Route::put('/users/{userId}/sync-permissions', [UserController::class, 'syncPermissions']);
+    Route::post('/users/{userId}/temporary-permissions', [UserController::class, 'assignTemporaryPermissions']);
+    Route::get('/users/{userId}/get-temporary-permissions', [UserController::class, 'getTemporaryPermissions']);
+    Route::post('/users/{userId}/revoke-permissions', [UserController::class, 'revokeTemporaryPermissions']);
+    Route::get('/users/{userId}/deactivation-history', [UserController::class, 'getDeactivationHistory']);
+    Route::get('/users/cleaenup-temporary-permissions', [UserController::class, 'cleanUpExpiredTemporaryPermissions']);
+    Route::get('/users/{userId}/get-active-temporaryPermission', [UserController::class, 'getActiveTemporaryPermissions']);
 });
 
 

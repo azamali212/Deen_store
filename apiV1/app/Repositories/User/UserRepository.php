@@ -3,6 +3,7 @@
 namespace App\Repositories\User;
 
 use App\Jobs\LogUserActionJob;
+use App\Models\Temporary_Permissions;
 use App\Models\User;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
@@ -58,10 +59,22 @@ class UserRepository implements UserRepositoryInterface
             );
         }
 
-        // Always include roles and both types of permissions
-        $query->with(['roles.permissions']);
+        // Include roles, role permissions, AND direct permissions
+        $query->with(['roles.permissions', 'permissions']);
 
-        return $query->paginate($request->input('per_page', 15));
+        $users = $query->paginate($request->input('per_page', 15));
+
+        // Transform the response to include permission summary
+        $users->getCollection()->transform(function ($user) {
+            $user->permissions_summary = [
+                'all_permissions' => $user->getAllPermissions()->pluck('name'),
+                'direct_permissions' => $user->permissions->pluck('name'),
+                'role_permissions' => $user->getPermissionsViaRoles()->pluck('name'),
+            ];
+            return $user;
+        });
+
+        return $users;
     }
     /**
      * Get a user by their ID, including optional related models.
@@ -70,16 +83,25 @@ class UserRepository implements UserRepositoryInterface
      * @param array $relations
      * @return \App\Models\User|null
      */
-    public function getUserById($id, $relations = [])
+    /**
+     * Get a user by their ID with formatted response including permissions
+     *
+     * @param mixed $id
+     * @param array $relations
+     * @return array|null
+     */
+    public function getUserById($id, $relations = []): ?array
     {
-        $user = User::with(['roles.permissions'])->find($id);
+        $user = User::with(['roles.permissions', 'permissions'])->find($id);
 
         if (!$user) {
-            return null; // Return null instead of array for consistency
+            return null;
         }
 
         // Get all permissions (both role-based and direct)
         $allPermissions = $user->getAllPermissions();
+        $directPermissions = $user->permissions;
+        $rolePermissions = $user->getPermissionsViaRoles();
 
         // Return the formatted array
         return [
@@ -107,7 +129,22 @@ class UserRepository implements UserRepositoryInterface
                         })
                     ];
                 }),
-
+                'direct_permissions' => $directPermissions->map(function ($permission) {
+                    return [
+                        'id' => $permission->id,
+                        'name' => $permission->name,
+                        'slug' => $permission->slug,
+                        'type' => 'direct'
+                    ];
+                }),
+                'permissions_summary' => [
+                    'all_permissions' => $allPermissions->pluck('name'),
+                    'direct_permissions' => $directPermissions->pluck('name'),
+                    'role_permissions' => $rolePermissions->pluck('name'),
+                    'total_permissions_count' => $allPermissions->count(),
+                    'direct_permissions_count' => $directPermissions->count(),
+                    'role_permissions_count' => $rolePermissions->count(),
+                ]
             ],
         ];
     }
@@ -1064,24 +1101,35 @@ class UserRepository implements UserRepositoryInterface
             // Validate and assign the permissions
             $validPermissions = Permission::whereIn('name', $permissions)->get();
             if ($validPermissions->count() !== count($permissions)) {
-                throw new Exception('One or more permissions are invalid.');
+                $invalidPermissions = array_diff($permissions, $validPermissions->pluck('name')->toArray());
+                throw new Exception('One or more permissions are invalid: ' . implode(', ', $invalidPermissions));
             }
 
-            // Sync the permissions for the user
-            $user->permissions()->sync($validPermissions->pluck('id'));
+            // Sync the DIRECT permissions for the user (this is what you want)
+            $user->syncPermissions($validPermissions->pluck('name')->toArray());
 
             // Commit the transaction
             DB::commit();
 
-            // Cache the updated permissions for future use
+            // Clear and update the cache with permission names
+            $permissionNames = $validPermissions->pluck('name')->toArray();
             Cache::forget("user_permissions_{$userId}");
-            Cache::put("user_permissions_{$userId}", $validPermissions);
+            Cache::put("user_permissions_{$userId}", $permissionNames, now()->addHours(24));
 
-            return $user; // Return the updated user
+            // Log the action
+            Log::info("Direct permissions assigned to user", [
+                'user_id' => $user->id,
+                'user_name' => $user->name,
+                'permissions' => $permissionNames,
+                'action_by' => Auth::id(),
+            ]);
+
+            // Return the user WITH permissions loaded
+            return $user->load('permissions');
         } catch (Exception $e) {
             DB::rollBack(); // Rollback if any error occurs
             Log::error('Error assigning permissions to user: ' . $e->getMessage());
-            return null; // Return null in case of an error
+            throw new Exception('Failed to assign permissions: ' . $e->getMessage());
         }
     }
 
@@ -1464,4 +1512,240 @@ class UserRepository implements UserRepositoryInterface
             throw new Exception("Failed to sync permissions: " . $e->getMessage());
         }
     } */
+
+    /**
+     * Assign temporary permissions to a user
+     */
+    public function assignTemporaryPermissions($userId, array $permissionsWithExpiry, $assignedBy, $reason = null): array
+    {
+        DB::beginTransaction();
+
+        try {
+            $user = User::findOrFail($userId);
+            $assignedPermissions = [];
+            $failedPermissions = [];
+
+            foreach ($permissionsWithExpiry as $permissionData) {
+                try {
+                    $permissionName = $permissionData['permission'];
+                    $expiresAt = $permissionData['expires_at'];
+
+                    // Validate permission exists
+                    $permission = Permission::where('name', $permissionName)->first();
+                    if (!$permission) {
+                        $failedPermissions[] = [
+                            'permission' => $permissionName,
+                            'error' => 'Permission not found'
+                        ];
+                        continue;
+                    }
+
+                    // Validate expiry date
+                    if (strtotime($expiresAt) <= time()) {
+                        $failedPermissions[] = [
+                            'permission' => $permissionName,
+                            'error' => 'Expiry date must be in the future'
+                        ];
+                        continue;
+                    }
+
+                    // Check if temporary permission already exists and is active
+                    $existingPermission = Temporary_Permissions::where('user_id', $userId)
+                        ->where('permission_id', $permission->id)
+                        ->active()
+                        ->first();
+
+                    if ($existingPermission) {
+                        $failedPermissions[] = [
+                            'permission' => $permissionName,
+                            'error' => 'Temporary permission already assigned and active'
+                        ];
+                        continue;
+                    }
+
+                    // Create temporary permission
+                    $temporaryPermission = Temporary_Permissions::create([
+                        'user_id' => $userId,
+                        'permission_id' => $permission->id,
+                        'expires_at' => $expiresAt,
+                        'reason' => $reason,
+                        'assigned_by' => $assignedBy->id,
+                        'is_active' => true
+                    ]);
+
+                    $assignedPermissions[] = $temporaryPermission;
+
+                    Log::info("Temporary permission assigned", [
+                        'user_id' => $user->id,
+                        'permission' => $permissionName,
+                        'expires_at' => $expiresAt,
+                        'assigned_by' => $assignedBy->id,
+                    ]);
+                } catch (Exception $e) {
+                    $failedPermissions[] = [
+                        'permission' => $permissionData['permission'],
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'assigned_permissions' => $assignedPermissions,
+                'failed_permissions' => $failedPermissions,
+                'message' => count($assignedPermissions) . ' temporary permissions assigned successfully'
+            ];
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error assigning temporary permissions: ' . $e->getMessage());
+            throw new Exception('Failed to assign temporary permissions: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Revoke temporary permissions from a user
+     */
+    public function revokeTemporaryPermissions($userId, array $permissionNames, $revokedBy, $reason = null): array
+    {
+        DB::beginTransaction();
+
+        try {
+            $user = User::findOrFail($userId);
+            $revokedPermissions = [];
+            $failedPermissions = [];
+
+            foreach ($permissionNames as $permissionName) {
+                try {
+                    $permission = Permission::where('name', $permissionName)->first();
+                    if (!$permission) {
+                        $failedPermissions[] = [
+                            'permission' => $permissionName,
+                            'error' => 'Permission not found'
+                        ];
+                        continue;
+                    }
+
+                    $temporaryPermission = Temporary_Permissions::where('user_id', $userId)
+                        ->where('permission_id', $permission->id)
+                        ->active()
+                        ->first();
+
+                    if (!$temporaryPermission) {
+                        $failedPermissions[] = [
+                            'permission' => $permissionName,
+                            'error' => 'No active temporary permission found'
+                        ];
+                        continue;
+                    }
+
+                    // Revoke the temporary permission
+                    $temporaryPermission->update([
+                        'is_active' => false,
+                        'revoked_at' => now(),
+                        'revoke_reason' => $reason
+                    ]);
+
+                    $revokedPermissions[] = $temporaryPermission;
+
+                    Log::info("Temporary permission revoked", [
+                        'user_id' => $user->id,
+                        'permission' => $permissionName,
+                        'revoked_by' => $revokedBy->id,
+                        'reason' => $reason
+                    ]);
+                } catch (Exception $e) {
+                    $failedPermissions[] = [
+                        'permission' => $permissionName,
+                        'error' => $e->getMessage()
+                    ];
+                }
+            }
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'revoked_permissions' => $revokedPermissions,
+                'failed_permissions' => $failedPermissions,
+                'message' => count($revokedPermissions) . ' temporary permissions revoked successfully'
+            ];
+        } catch (Exception $e) {
+            DB::rollBack();
+            Log::error('Error revoking temporary permissions: ' . $e->getMessage());
+            throw new Exception('Failed to revoke temporary permissions: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get user's active temporary permissions
+     */
+    public function getActiveTemporaryPermissions($userId)
+    {
+        return Temporary_Permissions::with('permission')
+            ->where('user_id', $userId)
+            ->active()
+            ->get()
+            ->map(function ($tempPermission) {
+                return [
+                    'id' => $tempPermission->id,
+                    'permission' => $tempPermission->permission->name,
+                    'assigned_at' => $tempPermission->assigned_at,
+                    'expires_at' => $tempPermission->expires_at,
+                    'reason' => $tempPermission->reason,
+                    'assigned_by' => $tempPermission->assignedBy->name ?? 'Unknown',
+                    'days_remaining' => now()->diffInDays($tempPermission->expires_at, false)
+                ];
+            });
+    }
+
+    /**
+     * Get all temporary permissions (including expired/revoked)
+     */
+    public function getAllTemporaryPermissions($userId)
+    {
+        return Temporary_Permissions::with(['permission', 'assignedBy'])
+            ->where('user_id', $userId)
+            ->orderBy('created_at', 'desc')
+            ->get();
+    }
+
+    /**
+     * Clean up expired temporary permissions (to be called via scheduler)
+     */
+    public function cleanupExpiredTemporaryPermissions(): int
+    {
+        $expiredPermissions = Temporary_Permissions::where('expires_at', '<=', now())
+            ->where('is_active', true)
+            ->get();
+
+        $count = 0;
+        foreach ($expiredPermissions as $permission) {
+            $permission->update(['is_active' => false]);
+            $count++;
+
+            Log::info("Expired temporary permission auto-removed", [
+                'user_id' => $permission->user_id,
+                'permission_id' => $permission->permission_id,
+                'expired_at' => $permission->expires_at
+            ]);
+        }
+
+        return $count;
+    }
+
+    /**
+     * Check if user has temporary permission
+     */
+    public function hasTemporaryPermission($userId, $permissionName): bool
+    {
+        $permission = Permission::where('name', $permissionName)->first();
+        if (!$permission) return false;
+
+        return Temporary_Permissions::where('user_id', $userId)
+            ->where('permission_id', $permission->id)
+            ->active()
+            ->exists();
+    }
 }
