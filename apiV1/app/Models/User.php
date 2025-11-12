@@ -212,22 +212,84 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Check if user has a specific permission (including temporary)
+     * OVERRIDE Spatie's permission check to include temporary permissions
      */
-    public function hasAnyPermission($permissionName): bool
+    public function hasPermissionTo($permission, $guardName = null): bool
     {
-        // Check direct permissions
+        // If it's a string, handle all permission types
+        if (is_string($permission)) {
+            return $this->checkPermissionByName($permission, $guardName);
+        }
+
+        // If it's a Permission object, use standard flow but include temporary permissions
+        return $this->hasDirectPermission($permission) || 
+               $this->hasPermissionViaRole($permission) ||
+               $this->hasTemporaryPermission($permission->name);
+    }
+
+    /**
+     * Check permission by name (handles all permission types)
+     */
+    protected function checkPermissionByName(string $permissionName, $guardName = null): bool
+    {
+        // Check direct permissions (string version)
         if ($this->hasDirectPermission($permissionName)) {
             return true;
         }
 
-        // Check role permissions
-        if ($this->hasPermissionTo($permissionName)) {
+        // Check role permissions - convert to Permission object first
+        $permission = Permission::findByName($permissionName, $guardName ?: $this->getDefaultGuardName());
+        if ($this->hasPermissionViaRole($permission)) {
             return true;
         }
 
         // Check temporary permissions
         return $this->hasTemporaryPermission($permissionName);
+    }
+
+    /**
+     * OVERRIDE: Check if user has any of the given permissions
+     */
+    public function hasAnyPermission(...$permissions): bool
+    {
+        $permissions = collect($permissions)->flatten();
+
+        foreach ($permissions as $permission) {
+            if ($this->checkPermission($permission)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * OVERRIDE: Check if user has all of the given permissions
+     */
+    public function hasAllPermissions(...$permissions): bool
+    {
+        $permissions = collect($permissions)->flatten();
+
+        foreach ($permissions as $permission) {
+            if (!$this->checkPermission($permission)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Internal permission check method
+     */
+    protected function checkPermission($permission): bool
+    {
+        if (is_string($permission)) {
+            return $this->checkPermissionByName($permission);
+        }
+
+        // Handle Permission object
+        return $this->hasPermissionTo($permission);
     }
 
     /**
@@ -246,7 +308,7 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Get all permission names (for frontend use)
+     * Get all permission names (including temporary)
      */
     public function getAllPermissionNames(): array
     {
@@ -261,6 +323,48 @@ class User extends Authenticatable implements MustVerifyEmail
             ->values()
             ->toArray();
     }
+
+    /**
+     * Get all permissions (including temporary) - for Spatie compatibility
+     */
+    public function getAllPermissions(): \Illuminate\Support\Collection
+    {
+        $directPermissions = $this->getDirectPermissions();
+        $rolePermissions = $this->getPermissionsViaRoles();
+        
+        // Convert temporary permissions to Permission models
+        $temporaryPermissions = $this->activeTemporaryPermissions()->get()->map(function ($tempPerm) {
+            return $tempPerm->permission;
+        });
+
+        return $directPermissions
+            ->merge($rolePermissions)
+            ->merge($temporaryPermissions)
+            ->unique('id');
+    }
+
+    /**
+     * OVERRIDE: Get direct permission names (for compatibility)
+     */
+    public function getPermissionNames(): \Illuminate\Support\Collection
+    {
+        return collect($this->getAllPermissionNames());
+    }
+
+    /**
+     * Enhanced permission check that works with gates and policies
+     */
+    public function can($ability, $arguments = []): bool
+    {
+        // First try the default Spatie check
+        if (parent::can($ability, $arguments)) {
+            return true;
+        }
+
+        // If default check fails, check temporary permissions
+        return $this->hasTemporaryPermission($ability);
+    }
+
     /**
      * Get complete permission data for frontend
      */

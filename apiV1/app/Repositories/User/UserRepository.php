@@ -847,8 +847,6 @@ class UserRepository implements UserRepositoryInterface
         return 'Unknown';
     }
 
-
-
     // Repository Method
     // Repository
     public function batchDeleteUsers(array $userIds)
@@ -1516,6 +1514,9 @@ class UserRepository implements UserRepositoryInterface
     /**
      * Assign temporary permissions to a user
      */
+    /**
+     * Assign temporary permissions to a user
+     */
     public function assignTemporaryPermissions($userId, array $permissionsWithExpiry, $assignedBy, $reason = null): array
     {
         DB::beginTransaction();
@@ -1549,38 +1550,52 @@ class UserRepository implements UserRepositoryInterface
                         continue;
                     }
 
-                    // Check if temporary permission already exists and is active
+                    // Check if ANY temporary permission exists (active or inactive)
                     $existingPermission = Temporary_Permissions::where('user_id', $userId)
                         ->where('permission_id', $permission->id)
-                        ->active()
                         ->first();
 
                     if ($existingPermission) {
-                        $failedPermissions[] = [
+                        // UPDATE existing record instead of creating new one
+                        $existingPermission->update([
+                            'expires_at' => $expiresAt,
+                            'reason' => $reason,
+                            'assigned_by' => $assignedBy->id,
+                            'is_active' => true,
+                            'revoked_at' => null, // Remove revocation
+                            'revoke_reason' => null // Remove revocation reason
+                        ]);
+
+                        $assignedPermissions[] = $existingPermission->fresh();
+
+                        Log::info("Temporary permission UPDATED", [
+                            'user_id' => $user->id,
                             'permission' => $permissionName,
-                            'error' => 'Temporary permission already assigned and active'
-                        ];
-                        continue;
+                            'expires_at' => $expiresAt,
+                            'assigned_by' => $assignedBy->id,
+                            'action' => 'updated_existing'
+                        ]);
+                    } else {
+                        // CREATE new temporary permission
+                        $temporaryPermission = Temporary_Permissions::create([
+                            'user_id' => $userId,
+                            'permission_id' => $permission->id,
+                            'expires_at' => $expiresAt,
+                            'reason' => $reason,
+                            'assigned_by' => $assignedBy->id,
+                            'is_active' => true
+                        ]);
+
+                        $assignedPermissions[] = $temporaryPermission;
+
+                        Log::info("Temporary permission CREATED", [
+                            'user_id' => $user->id,
+                            'permission' => $permissionName,
+                            'expires_at' => $expiresAt,
+                            'assigned_by' => $assignedBy->id,
+                            'action' => 'created_new'
+                        ]);
                     }
-
-                    // Create temporary permission
-                    $temporaryPermission = Temporary_Permissions::create([
-                        'user_id' => $userId,
-                        'permission_id' => $permission->id,
-                        'expires_at' => $expiresAt,
-                        'reason' => $reason,
-                        'assigned_by' => $assignedBy->id,
-                        'is_active' => true
-                    ]);
-
-                    $assignedPermissions[] = $temporaryPermission;
-
-                    Log::info("Temporary permission assigned", [
-                        'user_id' => $user->id,
-                        'permission' => $permissionName,
-                        'expires_at' => $expiresAt,
-                        'assigned_by' => $assignedBy->id,
-                    ]);
                 } catch (Exception $e) {
                     $failedPermissions[] = [
                         'permission' => $permissionData['permission'],
