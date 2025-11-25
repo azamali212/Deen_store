@@ -24,7 +24,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     //Activit Log //->middleware('permission:user-roles');
     Route::post('/user/log', [UserController::class, 'logUserAction'])->middleware('permission:user-log');
     Route::post('/users/{id}/active', [UserController::class, 'userActive'])->middleware('permission:user-active');
-   // Route::post('/users/{id}/inactivate', [UserController::class, 'userInActive'])->middleware('permission:user-inactive');
+    // Route::post('/users/{id}/inactivate', [UserController::class, 'userInActive'])->middleware('permission:user-inactive');
     Route::delete('/users/batch-delete', [UserController::class, 'batchDeleteUsers']);
     Route::delete('/users/batch-restore', [UserController::class, 'batchRestoreUsers']);
     Route::delete('/users/batch-permanent-delete', [UserController::class, 'betchForceDeleteUsers']);
@@ -54,6 +54,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/users/{userId}/deactivation-history', [UserController::class, 'getDeactivationHistory']);
     Route::get('/users/cleaenup-temporary-permissions', [UserController::class, 'cleanUpExpiredTemporaryPermissions']);
     Route::get('/users/{userId}/get-active-temporaryPermission', [UserController::class, 'getActiveTemporaryPermissions']);
+
+    //Location System 
+    // Update current user's location
+    Route::post('/user/location', [UserController::class, 'updateLocation']);
+
+    // Get users near location
+    Route::get('/users/nearby', [UserController::class, 'getUsersNearLocation']);
 });
 
 

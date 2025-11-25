@@ -47,34 +47,148 @@ class UserRepository implements UserRepositoryInterface
                     $query->where('status', $value);
                 } elseif ($key === 'created_at') {
                     $query->whereDate('created_at', $value);
+                } elseif ($key === 'location') {
+                    $query->where('last_known_location', 'like', '%' . $value . '%');
                 }
             }
         }
 
         // Sorting
         if ($request->has('sort')) {
-            $query->orderBy(
-                $request->input('sort'),
-                $request->input('sort_direction', 'asc')
-            );
+            $sortField = $request->input('sort');
+            $sortDirection = $request->input('sort_direction', 'asc');
+
+            // Handle location-based sorting
+            if ($sortField === 'location') {
+                $query->orderBy('last_known_location', $sortDirection);
+            } else {
+                $query->orderBy($sortField, $sortDirection);
+            }
         }
 
-        // Include roles, role permissions, AND direct permissions
+        // Include roles, role permissions, AND location data
         $query->with(['roles.permissions', 'permissions']);
 
         $users = $query->paginate($request->input('per_page', 15));
 
-        // Transform the response to include permission summary
+        // Transform the response to include permission summary and location
         $users->getCollection()->transform(function ($user) {
             $user->permissions_summary = [
                 'all_permissions' => $user->getAllPermissions()->pluck('name'),
                 'direct_permissions' => $user->permissions->pluck('name'),
                 'role_permissions' => $user->getPermissionsViaRoles()->pluck('name'),
             ];
+
+            // Add location data
+            $user->location_data = [
+                'last_known_location' => $user->last_known_location,
+                'latitude' => $user->latitude,
+                'longitude' => $user->longitude,
+                'last_location_updated_at' => $user->last_location_updated_at,
+                'is_online' => $this->isUserOnline($user),
+                'location_age' => $user->last_location_updated_at ?
+                    $this->formatDateTime($user->last_location_updated_at) : 'Never',
+                'last_login' => $user->last_login_at ?
+                    $this->formatDateTime($user->last_login_at) : 'Never'
+            ];
+
             return $user;
         });
 
         return $users;
+    }
+
+    /**
+     * Check if user is currently online (active within last 5 minutes)
+     */
+    private function isUserOnline(User $user): bool
+    {
+        if (!$user->last_login_at) {
+            return false;
+        }
+
+        // Convert to Carbon instance if it's a string
+        $lastLogin = $this->parseDateTime($user->last_login_at);
+
+        return $lastLogin && $lastLogin->gt(now()->subMinutes(5));
+    }
+
+    /**
+     * Safely parse datetime string to Carbon instance
+     */
+    private function parseDateTime($datetime)
+    {
+        if ($datetime instanceof \Carbon\Carbon) {
+            return $datetime;
+        }
+
+        if (is_string($datetime)) {
+            try {
+                return \Carbon\Carbon::parse($datetime);
+            } catch (Exception $e) {
+                Log::warning("Failed to parse datetime: {$datetime}", ['error' => $e->getMessage()]);
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Format datetime for display
+     */
+    private function formatDateTime($datetime): string
+    {
+        $carbon = $this->parseDateTime($datetime);
+        return $carbon ? $carbon->diffForHumans() : 'Invalid Date';
+    }
+
+    /**
+     * Update user's current location
+     */
+    public function updateUserLocation($userId, array $locationData): array
+    {
+        try {
+            $user = User::findOrFail($userId);
+
+            $updateData = [
+                'last_known_location' => $locationData['location'] ?? null,
+                'last_location_updated_at' => now()
+            ];
+
+            // Only update coordinates if provided
+            if (isset($locationData['latitude']) && isset($locationData['longitude'])) {
+                $updateData['latitude'] = $locationData['latitude'];
+                $updateData['longitude'] = $locationData['longitude'];
+            }
+
+            $user->update($updateData);
+
+            // Log location update
+            $this->logUserAction(
+                $userId,
+                'location_updated',
+                [
+                    'event_type' => 'location',
+                    'status' => 'success',
+                    'details' => "User location updated to: {$locationData['location']}",
+                    'latitude' => $locationData['latitude'] ?? null,
+                    'longitude' => $locationData['longitude'] ?? null
+                ]
+            );
+
+            return [
+                'success' => true,
+                'message' => 'Location updated successfully',
+                'location' => $user->only(['last_known_location', 'latitude', 'longitude', 'last_location_updated_at'])
+            ];
+        } catch (Exception $e) {
+            Log::error("Failed to update location for user {$userId}: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Failed to update location'
+            ];
+        }
     }
     /**
      * Get a user by their ID, including optional related models.

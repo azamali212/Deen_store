@@ -46,6 +46,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'email_verification_token',
         'last_login_at',
+        'last_login_ip', // Add this
+        'last_known_location', // Add this
+        'latitude', // Add this
+        'longitude', // Add this
+        'last_location_updated_at', // Add this
         'default_payment_method',
         'status', // e.g., 'active', 'inactive', 'banned'
         'deactivated_at',
@@ -77,6 +82,8 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'last_location_updated_at' => 'datetime',
+            'last_login_at' => 'datetime',
         ];
     }
 
@@ -222,9 +229,9 @@ class User extends Authenticatable implements MustVerifyEmail
         }
 
         // If it's a Permission object, use standard flow but include temporary permissions
-        return $this->hasDirectPermission($permission) || 
-               $this->hasPermissionViaRole($permission) ||
-               $this->hasTemporaryPermission($permission->name);
+        return $this->hasDirectPermission($permission) ||
+            $this->hasPermissionViaRole($permission) ||
+            $this->hasTemporaryPermission($permission->name);
     }
 
     /**
@@ -331,7 +338,7 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         $directPermissions = $this->getDirectPermissions();
         $rolePermissions = $this->getPermissionsViaRoles();
-        
+
         // Convert temporary permissions to Permission models
         $temporaryPermissions = $this->activeTemporaryPermissions()->get()->map(function ($tempPerm) {
             return $tempPerm->permission;

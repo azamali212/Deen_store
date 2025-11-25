@@ -54,6 +54,9 @@ class UserController extends Controller
             ]
         ]);
     }
+
+    // In UserController
+   
     public function show($id): JsonResponse
     {
         try {

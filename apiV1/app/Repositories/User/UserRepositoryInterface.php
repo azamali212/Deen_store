@@ -213,4 +213,6 @@ interface UserRepositoryInterface
     public function getActiveTemporaryPermissions($userId);
 
     public function revokeTemporaryPermissions($userId, array $permissionNames, $revokedBy, $reason = null): array;
+
+    public function updateUserLocation($userId, array $locationData): array;
 }

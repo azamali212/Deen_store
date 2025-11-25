@@ -13,7 +13,10 @@ use Spatie\Permission\Models\Role;
 use Illuminate\Support\Facades\RateLimiter;
 use App\Jobs\LogUserActionJob;
 use App\Repositories\User\UserRepositoryInterface;
+use Exception;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter as FacadeRateLimiter;
 
 class AuthRepository implements AuthRepositoryInterface
@@ -59,7 +62,6 @@ class AuthRepository implements AuthRepositoryInterface
 
         return $user;
     }
-
     public function login(array $credentials, $guard = null)
     {
         $email = $credentials['email'] ?? 'unknown@example.com';
@@ -95,12 +97,25 @@ class AuthRepository implements AuthRepositoryInterface
             ], 403);
         }
 
+        // Get client IP and location
+        $ip = request()->ip();
+        $locationData = $this->getLocationFromIp($ip);
+
+        // Update user location
+        $user->update([
+            'last_login_at' => now(),
+            'last_login_ip' => $ip,
+            'last_known_location' => $locationData['location'] ?? null,
+            'latitude' => $locationData['latitude'] ?? null,
+            'longitude' => $locationData['longitude'] ?? null,
+            'last_location_updated_at' => now()
+        ]);
+
         // Determine guard based on role if not specified
         $guard = $guard ?: $this->getDefaultGuardForRole($user->getRoleNames()->first());
 
         // Login successful
         RateLimiter::clear($key);
-        $user->update(['last_login_at' => now()]);
 
         // Get all permissions (direct + via roles) using Spatie
         $permissions = $user->getAllPermissions()->pluck('name');
@@ -122,6 +137,8 @@ class AuthRepository implements AuthRepositoryInterface
             'details' => "User logged in with guard: {$guard}",
             'reference' => $user,
             'tab_session_id' => $tabSessionId,
+            'location' => $locationData['location'] ?? 'Unknown',
+            'ip_address' => $ip
         ]);
 
         return response()->json([
@@ -131,9 +148,160 @@ class AuthRepository implements AuthRepositoryInterface
             'guard' => $guard,
             'role' => $role,
             'permissions' => $permissions,
+            'location' => $locationData,
             'tab_session_id' => $tabSessionId, // Return to client for tab identification
         ]);
     }
+
+    /**
+     * Get location data from IP address
+     */
+   /**
+ * Get location data from IP address
+ */
+private function getLocationFromIp(string $ip): array
+{
+    try {
+        // For local development, try to get real location or use better fallback
+        if ($ip === '127.0.0.1' || $ip === '::1') {
+            // Try to get external IP first
+            $externalIp = $this->getExternalIp();
+            if ($externalIp && $externalIp !== $ip) {
+                return $this->getLocationFromIp($externalIp);
+            }
+            
+            // If still localhost, use a more descriptive location
+            return [
+                'location' => 'Development Environment',
+                'latitude' => null,
+                'longitude' => null,
+                'city' => 'Development',
+                'country' => 'Local',
+                'region' => 'Development Server',
+                'timezone' => config('app.timezone', 'UTC'),
+                'isp' => 'Local Development'
+            ];
+        }
+
+        // Try multiple geolocation services for better accuracy
+        $locationData = $this->tryMultipleGeolocationServices($ip);
+        
+        if ($locationData) {
+            return $locationData;
+        }
+
+    } catch (Exception $e) {
+        Log::warning("Failed to get location from IP {$ip}: " . $e->getMessage());
+    }
+
+    // Improved fallback data
+    return [
+        'location' => 'Location Unknown',
+        'latitude' => null,
+        'longitude' => null,
+        'city' => 'Unknown',
+        'country' => 'Unknown',
+        'region' => 'Unknown',
+        'timezone' => config('app.timezone', 'UTC'),
+        'isp' => 'Unknown'
+    ];
+}
+
+/**
+ * Try multiple geolocation services
+ */
+private function tryMultipleGeolocationServices(string $ip): ?array
+{
+    $services = [
+        'ipapi' => "http://ip-api.com/json/{$ip}",
+        'ipapi_co' => "https://ipapi.co/{$ip}/json/",
+        'ipinfo' => "https://ipinfo.io/{$ip}/json",
+    ];
+
+    foreach ($services as $service => $url) {
+        try {
+            $response = Http::timeout(3)->get($url);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                
+                switch ($service) {
+                    case 'ipapi': // ip-api.com
+                        if ($data['status'] === 'success') {
+                            return [
+                                'location' => $data['city'] . ', ' . $data['country'],
+                                'latitude' => $data['lat'],
+                                'longitude' => $data['lon'],
+                                'city' => $data['city'],
+                                'country' => $data['country'],
+                                'region' => $data['regionName'],
+                                'timezone' => $data['timezone'],
+                                'isp' => $data['isp']
+                            ];
+                        }
+                        break;
+                        
+                    case 'ipapi_co': // ipapi.co
+                        if (!isset($data['error'])) {
+                            return [
+                                'location' => $data['city'] . ', ' . $data['country_name'],
+                                'latitude' => $data['latitude'],
+                                'longitude' => $data['longitude'],
+                                'city' => $data['city'],
+                                'country' => $data['country_name'],
+                                'region' => $data['region'],
+                                'timezone' => $data['timezone'],
+                                'isp' => $data['org'] ?? 'Unknown'
+                            ];
+                        }
+                        break;
+                        
+                    case 'ipinfo': // ipinfo.io
+                        if (isset($data['city'])) {
+                            $coords = explode(',', $data['loc'] ?? '');
+                            return [
+                                'location' => $data['city'] . ', ' . $data['country'],
+                                'latitude' => $coords[0] ?? null,
+                                'longitude' => $coords[1] ?? null,
+                                'city' => $data['city'],
+                                'country' => $data['country'],
+                                'region' => $data['region'] ?? 'Unknown',
+                                'timezone' => $data['timezone'] ?? 'UTC',
+                                'isp' => $data['org'] ?? 'Unknown'
+                            ];
+                        }
+                        break;
+                }
+            }
+        } catch (Exception $e) {
+            Log::debug("Geolocation service {$service} failed: " . $e->getMessage());
+            continue;
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * Get external IP address
+ */
+private function getExternalIp(): ?string
+{
+    try {
+        $response = Http::timeout(3)->get('https://api.ipify.org');
+        if ($response->successful()) {
+            $ip = trim($response->body());
+            // Validate IP format
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+    } catch (Exception $e) {
+        Log::debug('Failed to get external IP: ' . $e->getMessage());
+    }
+    
+    return null;
+}
 
     public function getCurrentGuard($tokenName)
     {
