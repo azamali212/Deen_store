@@ -5,9 +5,15 @@ namespace App\Http\Controllers\Permission_Settings;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Role\StoreRoleRequest;
 use App\Http\Requests\Role\UpdateRoleRequest;
+use App\Models\PendingRoleRequest;
+use App\Models\User;
+use App\Notifications\PendingRoleApprovalNotification;
+use App\Notifications\PendingRoleStatusNotification;
 use App\Repositories\PermissionSettings\Role\RoleRepositoryInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class RoleController extends Controller
 {
@@ -28,24 +34,83 @@ class RoleController extends Controller
         return response()->json($roles);
     }
 
+    // MODIFIED: Store method with approval system
+    // MODIFIED: Store method with approval system
+
     public function store(StoreRoleRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:roles,name',
-            'slug' => 'nullable|string|max:255|unique:roles,slug',
-            'permission_names' => 'nullable|array',
-            'permission_names.*' => 'string|exists:permissions,name',
-        ]);
+        $validated = $request->validated();
 
+        // Check if user is super admin
+        $user = Auth::user();
+
+        // Check if user has Super Admin role with 'api' guard
+        $isSuperAdmin = $user->hasRole('Super Admin', 'api');
+
+        // If super admin, create role directly
+        if ($isSuperAdmin) {
+            try {
+                $role = $this->roleRepository->createRole($validated);
+                return response()->json([
+                    'message' => 'Role created successfully',
+                    'data' => $role
+                ], 201);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'message' => 'Failed to create role',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+        }
+
+        // If not super admin (but could be regular Admin), create pending request
+        DB::beginTransaction();
         try {
-            $role = $this->roleRepository->createRole($validated);
+            // Check for duplicate pending request
+            $duplicate = PendingRoleRequest::where('name', $validated['name'])
+                ->where('created_by', $user->id)
+                ->pending()
+                ->exists();
+
+            if ($duplicate) {
+                throw new \Exception('You already have a pending request for this role name.');
+            }
+
+            // Check if role already exists
+            if (\Spatie\Permission\Models\Role::where('name', $validated['name'])->exists()) {
+                throw new \Exception('A role with this name already exists.');
+            }
+
+            // Create pending request
+            $pendingRequest = PendingRoleRequest::create([
+                'name' => $validated['name'],
+                'slug' => $validated['slug'] ?? null,
+                'permission_names' => $validated['permission_names'] ?? [],
+                'description' => $validated['description'] ?? null,
+                'created_by' => $user->id,
+                'status' => 'pending'
+            ]);
+
+            // Notify creator
+            $user->notify(new PendingRoleStatusNotification($pendingRequest, 'pending'));
+
+            // Notify all super admins - use 'api' guard (same as your authentication)
+            $superAdmins = User::role('Super Admin', 'api')->get(); // Changed to 'api' guard
+            foreach ($superAdmins as $superAdmin) {
+                $superAdmin->notify(new PendingRoleApprovalNotification($pendingRequest));
+            }
+
+            DB::commit();
+
             return response()->json([
-                'message' => 'Role created successfully',
-                'data' => $role
+                'message' => 'Role request submitted successfully. Waiting for super admin approval.',
+                'data' => $pendingRequest,
+                'requires_approval' => true
             ], 201);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
-                'message' => 'Failed to create role',
+                'message' => 'Failed to submit role request',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -91,6 +156,7 @@ class RoleController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
     public function attachPermissions(Request $request, $id): JsonResponse
     {
         $data = $request->validate([
@@ -129,6 +195,7 @@ class RoleController extends Controller
             'role' => $role
         ]);
     }
+
     public function attachUsers(Request $request, $id): JsonResponse
     {
         $data = $request->validate([
@@ -260,5 +327,183 @@ class RoleController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 404);
         }
+    }
+
+    // NEW: Get all pending role requests (for super admins)
+    // NEW: Get all pending role requests (for super admins)
+    public function getPendingRequests(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        // Use 'api' guard consistently
+        if (!$user->hasRole('Super Admin', 'api')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $search = $request->get('search');
+
+        $requests = PendingRoleRequest::pending()
+            ->with('creator')
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('slug', 'like', "%{$search}%")
+                        ->orWhereHas('creator', function ($q) use ($search) {
+                            $q->where('name', 'like', "%{$search}%")
+                                ->orWhere('email', 'like', "%{$search}%");
+                        });
+                });
+            })
+            ->latest()
+            ->paginate($perPage);
+
+        return response()->json([
+            'data' => $requests
+        ]);
+    }
+
+    // NEW: Get my pending requests
+    // NEW: Get my pending requests
+    public function getMyPendingRequests(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        $perPage = $request->get('per_page', 15);
+
+        // FIX: Use $user->id instead of $user->id()
+        $requests = PendingRoleRequest::where('created_by', $user->id)
+            ->latest()
+            ->paginate($perPage);
+
+        return response()->json([
+            'data' => $requests
+        ]);
+    }
+
+    // NEW: Approve pending request
+    // NEW: Approve pending request
+    public function approveRequest($ulid): JsonResponse  // This parameter name should match route
+    {
+        $user = Auth::user();
+        // Use 'api' guard consistently
+        if (!$user->hasRole('Super Admin', 'api')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            // The parameter is named $ulid but contains the ID value
+            $pendingRequest = PendingRoleRequest::where('id', $ulid)->firstOrFail();
+
+            // Or if you're using ULID as primary key, uncomment this:
+            // $pendingRequest = PendingRoleRequest::where('id', $ulid)->firstOrFail();
+
+            if (!$pendingRequest->isPending()) {
+                throw new \Exception('Request is not in pending status.');
+            }
+
+            // Create actual role using your existing repository
+            $roleData = [
+                'name' => $pendingRequest->name,
+                'slug' => $pendingRequest->slug,
+                'permission_names' => $pendingRequest->permission_names ?? []
+            ];
+
+            $role = $this->roleRepository->createRole($roleData);
+
+            // Update request status
+            $pendingRequest->update([
+                'status' => 'approved',
+                'approved_by' => $user->id,
+                'approved_at' => now()
+            ]);
+
+            // Notify creator
+            if ($pendingRequest->creator) {
+                $pendingRequest->creator->notify(new PendingRoleStatusNotification($pendingRequest, 'approved', $user));
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Role request approved successfully. Role has been created.',
+                'role' => $role,
+                'request' => $pendingRequest
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Failed to approve request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // NEW: Reject pending request
+    // NEW: Reject pending request
+    public function rejectRequest(Request $request, $ulid): JsonResponse
+    {
+        $user = Auth::user();
+        // Use 'api' guard consistently
+        if (!$user->hasRole('Super Admin', 'api')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|min:5|max:500'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // The parameter is named $ulid but contains the ID value
+            $pendingRequest = PendingRoleRequest::where('id', $ulid)->firstOrFail();
+
+            if (!$pendingRequest->isPending()) {
+                throw new \Exception('Request is not in pending status.');
+            }
+
+            // Update request status
+            $pendingRequest->update([
+                'status' => 'rejected',
+                'approved_by' => $user->id,
+                'rejection_reason' => $validated['reason'],
+                'rejected_at' => now()
+            ]);
+
+            // Notify creator
+            if ($pendingRequest->creator) {
+                $pendingRequest->creator->notify(new PendingRoleStatusNotification($pendingRequest, 'rejected', $user));
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Role request rejected successfully',
+                'request' => $pendingRequest
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Failed to reject request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // NEW: Get request statistics
+    public function getRequestStats(): JsonResponse
+    {
+        $stats = [
+            'total' => PendingRoleRequest::count(),
+            'pending' => PendingRoleRequest::pending()->count(),
+            'approved' => PendingRoleRequest::approved()->count(),
+            'rejected' => PendingRoleRequest::rejected()->count(),
+            'today_pending' => PendingRoleRequest::pending()
+                ->whereDate('created_at', today())
+                ->count()
+        ];
+
+        return response()->json([
+            'data' => $stats
+        ]);
     }
 }

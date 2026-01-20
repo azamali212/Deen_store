@@ -1,5 +1,8 @@
 <?php
-
+/** 
+ * @method string createToken(string $name, array $abilities = ['*'])
+ * @method \Illuminate\Support\Collection getRoleNames()
+ */
 namespace App\Models;
 
 use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -11,9 +14,11 @@ use App\Notifications\VerifyEmail;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Cashier\Billable;
-use Laravel\Sanctum\HasApiTokens;
+
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+
+use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
 /**

@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             'cart.security' => \App\Http\Middleware\CartSecurityMiddleware::class,
             'inventory-manage' => \App\Http\Middleware\InventoryManagePermission::class,
+            'multi-auth' => \App\Http\Middleware\MultiGuardAuthenticate::class,
            
         ]);
     })

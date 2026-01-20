@@ -3,497 +3,453 @@
 namespace App\Repositories\Auth;
 
 use App\Models\User;
-use App\Notifications\ForgotPasswordNotification;
-use App\Notifications\ResetPasswordNotification;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
-use Illuminate\Support\Facades\RateLimiter;
-use App\Jobs\LogUserActionJob;
 use App\Repositories\User\UserRepositoryInterface;
-use Exception;
+use App\Services\Auth\SessionService;
+use App\Services\Auth\SuspiciousLoginService;
+use App\Services\Auth\TokenService;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter as FacadeRateLimiter;
+use Spatie\Permission\Models\Role;
+use Illuminate\Support\Str;
+use App\Services\Auth\OtpService;
+use App\Notifications\LoginOtpNotification;
+use App\Services\Auth\AuditService;
+use Exception;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Notification;
 
 class AuthRepository implements AuthRepositoryInterface
 {
-    protected $userRepository;
-    public function __construct(UserRepositoryInterface $userRepository)
-    {
-        $this->userRepository = $userRepository;
+    protected UserRepositoryInterface $userRepository;
+    protected SessionService $sessionService;
+    protected TokenService $tokenService;
+    protected SuspiciousLoginService $suspiciousService;
+    protected OtpService $otpService;
+
+    protected AuditService $auditService;
+
+    public function __construct(
+        UserRepositoryInterface $repo,
+        SessionService $sessionService,
+        TokenService $tokenService,
+        SuspiciousLoginService $suspiciousService,
+        OtpService $otpService,
+        AuditService $auditService
+    ) {
+        $this->userRepository   = $repo;
+        $this->sessionService  = $sessionService;
+        $this->tokenService    = $tokenService;
+        $this->suspiciousService = $suspiciousService;
+        $this->otpService      = $otpService;
+        $this->auditService = $auditService;
     }
+
+    /***********************************************
+     * REGISTER USER
+     ***********************************************/
     public function register(array $data)
     {
-        $request = request();
-        // Hash password
         $data['password'] = Hash::make($data['password']);
+
         $user = User::create($data);
 
-        // Generate verification token
-        $user->email_verification_token = Str::random(60); // Generate token
+        $user->email_verification_token = Str::random(60);
         $user->save();
 
-        // Check if a role is provided, otherwise default to 'Customer'
-        $role = isset($data['role']) ? $data['role'] : 'Customer';
+        $roleName = $data['role'] ?? 'Customer';
+        $role = Role::where('name', $roleName)->first();
 
-        // Assign the role using 'api' guard
-        $role = Role::findByName($role, 'api');
+        if (!$role) {
+            throw new Exception("Role '{$roleName}' does not exist.");
+        }
+
         $user->assignRole($role);
-
-        $deviceDetial = $this->userRepository->getDeviceType($request);
-        $browserDetial = $this->userRepository->getBrowser($request);
-        LogUserActionJob::dispatch($user->id, 'user_registered', [
-            'event_type'    => 'registration',
-            'status'        => 'success',
-            'details'       => 'User successfully registered and assigned role: ' . $role->name,
-            'reference'     => $user,
-            'ip_address'    => $request->ip(),
-            'user_agent'    => $request->userAgent(),
-            'device_type'   => $deviceDetial,
-            'browser'       => $browserDetial,
-            'platform'      => php_uname('s'),
-            'route_name'    => $request->route()?->getName(),
-            'url'           => $request->fullUrl(),
-        ]);
 
         return $user;
     }
-    public function login(array $credentials, $guard = null)
+
+    /***********************************************
+     * GET CURRENT USER PROFILE
+     ***********************************************/
+    public function getCurrentUser()
     {
-        $email = $credentials['email'] ?? 'unknown@example.com';
-        $key = 'login_attempts:' . strtolower($email);
-        $maxAttempts = 3;
-        $decayMinutes = 5;
-
-        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
-            $seconds = RateLimiter::availableIn($key);
-            return response()->json([
-                'message' => "Too many login attempts. Please try again in {$seconds} seconds."
-            ], 429);
+        $user = Auth::user();
+        
+        if (!$user) {
+            throw new Exception("User not authenticated");
         }
-
-        // Find user by email
-        $user = User::where('email', $credentials['email'])->first();
-
-        if (!$user || !Hash::check($credentials['password'], $user->password)) {
-            RateLimiter::hit($key, $decayMinutes * 60);
-            $remainingAttempts = RateLimiter::remaining($key, $maxAttempts);
-
-            return response()->json([
-                'message' => 'Invalid credentials. ' .
-                    ($remainingAttempts > 0 ? "You have {$remainingAttempts} more attempt(s)." :
-                        "Account locked. Try again in {$decayMinutes} minutes.")
-            ], 401);
-        }
-
-        // Check if user is deactivated
-        if ($user->status === 'inactive') {
-            return response()->json([
-                'message' => 'Your account has been deactivated. Please contact support.'
-            ], 403);
-        }
-
-        // Get client IP and location
-        $ip = request()->ip();
-        $locationData = $this->getLocationFromIp($ip);
-
-        // Update user location
-        $user->update([
-            'last_login_at' => now(),
-            'last_login_ip' => $ip,
-            'last_known_location' => $locationData['location'] ?? null,
-            'latitude' => $locationData['latitude'] ?? null,
-            'longitude' => $locationData['longitude'] ?? null,
-            'last_location_updated_at' => now()
-        ]);
-
-        // Determine guard based on role if not specified
-        $guard = $guard ?: $this->getDefaultGuardForRole($user->getRoleNames()->first());
-
-        // Login successful
-        RateLimiter::clear($key);
-
-        // Get all permissions (direct + via roles) using Spatie
-        $permissions = $user->getAllPermissions()->pluck('name');
-        $role = $user->getRoleNames()->first();
-
-        // Generate unique token identifier for this tab session
-        $tabSessionId = Str::random(40);
-        $tokenName = $guard . '_token_' . $tabSessionId;
-
-        // Create new token without deleting existing ones (for multi-tab support)
-        $token = $user->createToken($tokenName, $permissions->toArray())->plainTextToken;
-
-        // Store the guard context for this token
-        Cache::put("auth:guard:{$tokenName}", $guard, now()->addDay());
-
-        LogUserActionJob::dispatch($user->id, 'user_login', [
-            'event_type' => 'authentication',
-            'status' => 'success',
-            'details' => "User logged in with guard: {$guard}",
-            'reference' => $user,
-            'tab_session_id' => $tabSessionId,
-            'location' => $locationData['location'] ?? 'Unknown',
-            'ip_address' => $ip
-        ]);
-
-        return response()->json([
-            'message' => 'Login successful',
-            'user' => $user,
-            'token' => $token,
-            'guard' => $guard,
-            'role' => $role,
-            'permissions' => $permissions,
-            'location' => $locationData,
-            'tab_session_id' => $tabSessionId, // Return to client for tab identification
-        ]);
+        
+        // Load relationships
+        $user->load('roles');
+        
+        return [
+            'success' => true,
+            'message' => 'User profile retrieved successfully',
+            'user' => $this->formatUser($user)
+        ];
     }
 
-    /**
-     * Get location data from IP address
-     */
-   /**
- * Get location data from IP address
- */
-private function getLocationFromIp(string $ip): array
-{
-    try {
-        // For local development, try to get real location or use better fallback
-        if ($ip === '127.0.0.1' || $ip === '::1') {
-            // Try to get external IP first
-            $externalIp = $this->getExternalIp();
-            if ($externalIp && $externalIp !== $ip) {
-                return $this->getLocationFromIp($externalIp);
-            }
-            
-            // If still localhost, use a more descriptive location
+    /***********************************************
+     * LOGIN (ENTERPRISE + PORTAL + MULTI SESSION)
+     ***********************************************/
+    public function login(array $credentials, ?string $portal = null, ?array $location = null)
+    {
+        $email = $credentials['email'];
+
+        // Throttle login attempts
+        $this->throttleLogin($email);
+
+        // Find user
+        $user = User::where('email', $email)->first();
+
+        // ❌ INVALID CREDENTIALS
+        if (!$user || !Hash::check($credentials['password'], $user->password)) {
+
+            $this->auditService->log(
+                event: 'login_failed',
+                email: $email,
+                meta: ['reason' => 'invalid_credentials']
+            );
+
+            $this->sessionService->recordFailedAttempt($email);
+            throw new Exception("Invalid credentials");
+        }
+
+        // ❌ INACTIVE USER
+        if ($user->status !== 'active') {
+
+            $this->auditService->log(
+                event: 'login_failed',
+                userId: $user->id,
+                email: $user->email,
+                meta: ['reason' => 'inactive_account']
+            );
+
+            throw new Exception("Your account is inactive.");
+        }
+
+        // Validate portal access
+        $this->validatePortalAccess($user, $portal);
+
+        // Resolve guard
+        $guard = $this->sessionService->resolveGuardFromPortal($portal, $user);
+
+        // ✅ Create session ONLY after auth passes
+        $session = $this->sessionService->createSession($user, $guard, $portal, $location);
+
+        // Suspicious login detection
+        $isSuspicious = $this->suspiciousService->detect($user, $session);
+
+        if ($isSuspicious) {
+
+            $otp = $this->otpService->generateOtp($user->id, $session->session_id);
+
+            $user->notify(new LoginOtpNotification($otp));
+
+            $this->auditService->log(
+                event: 'otp_sent',
+                userId: $user->id,
+                email: $user->email,
+                sessionId: $session->session_id,
+                meta: ['reason' => 'suspicious_login']
+            );
+
             return [
-                'location' => 'Development Environment',
-                'latitude' => null,
-                'longitude' => null,
-                'city' => 'Development',
-                'country' => 'Local',
-                'region' => 'Development Server',
-                'timezone' => config('app.timezone', 'UTC'),
-                'isp' => 'Local Development'
+                'success' => false,
+                'requires_verification' => true,
+                'session_id' => $session->session_id,
+                'message' => 'Suspicious login detected. OTP sent to email.'
             ];
         }
 
-        // Try multiple geolocation services for better accuracy
-        $locationData = $this->tryMultipleGeolocationServices($ip);
-        
-        if ($locationData) {
-            return $locationData;
-        }
+        // Generate tokens
+        $tokens = $this->tokenService->generateTokens($user, $session->session_id);
 
-    } catch (Exception $e) {
-        Log::warning("Failed to get location from IP {$ip}: " . $e->getMessage());
+        // ✅ LOGIN SUCCESS AUDIT
+        $this->auditService->log(
+            event: 'login_success',
+            userId: $user->id,
+            email: $user->email,
+            sessionId: $session->session_id,
+            meta: [
+                'portal' => $portal,
+                'guard' => $guard
+            ]
+        );
+
+        return [
+            'success' => true,
+            'message' => 'Login successful',
+            'token' => $tokens,
+            'user' => $this->formatUser($user),
+            'session' => [
+                'session_id' => $session->session_id,
+                'device' => $session->device,
+                'ip' => $session->ip,
+                'portal' => $portal,
+            ],
+            'access' => $this->sessionService->getAccessPages($user),
+        ];
     }
 
-    // Improved fallback data
-    return [
-        'location' => 'Location Unknown',
-        'latitude' => null,
-        'longitude' => null,
-        'city' => 'Unknown',
-        'country' => 'Unknown',
-        'region' => 'Unknown',
-        'timezone' => config('app.timezone', 'UTC'),
-        'isp' => 'Unknown'
-    ];
-}
+    public function verifyOtp(string $email, string $sessionId, string $otp)
+    {
+        $user = User::where('email', $email)->firstOrFail();
 
-/**
- * Try multiple geolocation services
- */
-private function tryMultipleGeolocationServices(string $ip): ?array
-{
-    $services = [
-        'ipapi' => "http://ip-api.com/json/{$ip}",
-        'ipapi_co' => "https://ipapi.co/{$ip}/json/",
-        'ipinfo' => "https://ipinfo.io/{$ip}/json",
-    ];
+        // Validate session
+        $sessionRow = $this->sessionService->getSessionById($sessionId);
+        if (!$sessionRow || (string)$sessionRow->user_id !== (string)$user->id) {
+            throw new Exception('Invalid session.');
+        }
 
-    foreach ($services as $service => $url) {
-        try {
-            $response = Http::timeout(3)->get($url);
-            
-            if ($response->successful()) {
-                $data = $response->json();
-                
-                switch ($service) {
-                    case 'ipapi': // ip-api.com
-                        if ($data['status'] === 'success') {
-                            return [
-                                'location' => $data['city'] . ', ' . $data['country'],
-                                'latitude' => $data['lat'],
-                                'longitude' => $data['lon'],
-                                'city' => $data['city'],
-                                'country' => $data['country'],
-                                'region' => $data['regionName'],
-                                'timezone' => $data['timezone'],
-                                'isp' => $data['isp']
-                            ];
-                        }
-                        break;
-                        
-                    case 'ipapi_co': // ipapi.co
-                        if (!isset($data['error'])) {
-                            return [
-                                'location' => $data['city'] . ', ' . $data['country_name'],
-                                'latitude' => $data['latitude'],
-                                'longitude' => $data['longitude'],
-                                'city' => $data['city'],
-                                'country' => $data['country_name'],
-                                'region' => $data['region'],
-                                'timezone' => $data['timezone'],
-                                'isp' => $data['org'] ?? 'Unknown'
-                            ];
-                        }
-                        break;
-                        
-                    case 'ipinfo': // ipinfo.io
-                        if (isset($data['city'])) {
-                            $coords = explode(',', $data['loc'] ?? '');
-                            return [
-                                'location' => $data['city'] . ', ' . $data['country'],
-                                'latitude' => $coords[0] ?? null,
-                                'longitude' => $coords[1] ?? null,
-                                'city' => $data['city'],
-                                'country' => $data['country'],
-                                'region' => $data['region'] ?? 'Unknown',
-                                'timezone' => $data['timezone'] ?? 'UTC',
-                                'isp' => $data['org'] ?? 'Unknown'
-                            ];
-                        }
-                        break;
-                }
-            }
-        } catch (Exception $e) {
-            Log::debug("Geolocation service {$service} failed: " . $e->getMessage());
-            continue;
+        // ✅ SINGLE OTP CHECK
+        $isValid = $this->otpService->verifyOtp($user->id, $sessionId, $otp);
+
+        if (!$isValid) {
+            $this->auditService->log(
+                event: 'otp_failed',
+                userId: $user->id,
+                email: $user->email,
+                sessionId: $sessionId
+            );
+
+            throw new Exception('Invalid or expired OTP');
+        }
+
+        // ✅ OTP SUCCESS
+        $tokens = $this->tokenService->generateTokens($user, $sessionId);
+
+        $this->auditService->log(
+            event: 'otp_verified',
+            userId: $user->id,
+            email: $user->email,
+            sessionId: $sessionId
+        );
+
+        return [
+            'success' => true,
+            'message' => 'OTP verified successfully',
+            'token' => $tokens,
+            'user' => $this->formatUser($user),
+            'session' => [
+                'session_id' => $sessionId,
+                'device' => $sessionRow->device,
+                'ip' => $sessionRow->ip,
+                'portal' => $sessionRow->login_portal,
+            ],
+            'access' => $this->sessionService->getAccessPages($user),
+        ];
+    }
+    private function throttleLogin(string $email): void
+    {
+        $key = "login:throttle:" . $email;
+
+        RateLimiter::hit($key, 300); // 5-minute window
+
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            throw new Exception("Too many login attempts. Try again in 5 minutes.");
         }
     }
-    
-    return null;
-}
 
-/**
- * Get external IP address
- */
-private function getExternalIp(): ?string
-{
-    try {
-        $response = Http::timeout(3)->get('https://api.ipify.org');
-        if ($response->successful()) {
-            $ip = trim($response->body());
-            // Validate IP format
-            if (filter_var($ip, FILTER_VALIDATE_IP)) {
-                return $ip;
+    private function validatePortalAccess(User $user, ?string $portal)
+    {
+        if (!$portal) return;
+
+        if ($portal === 'admin' && !$user->hasAnyRole(['Super Admin', 'Admin'])) {
+            throw new Exception("Unauthorized for admin portal.");
+        }
+
+        if ($portal === 'customer') {
+            // Must have customer role
+            if (!$user->hasRole('Customer')) {
+                throw new Exception("You do not have access to the customer portal.");
             }
         }
-    } catch (Exception $e) {
-        Log::debug('Failed to get external IP: ' . $e->getMessage());
     }
-    
-    return null;
-}
 
+    /***********************************************
+     * REFRESH TOKEN
+     ***********************************************/
+    public function refreshToken(string $refreshToken)
+    {
+        return $this->tokenService->refresh($refreshToken);
+    }
+
+    /***********************************************
+     * LOGOUT (CURRENT DEVICE)
+     ***********************************************/
+    public function logout()
+    {
+        $user = Auth::user();
+
+        if ($user) {
+            $this->auditService->log(
+                event: 'logout',
+                userId: $user->id,
+                email: $user->email
+            );
+        }
+
+        return $this->sessionService->logoutCurrentDevice();
+    }
+
+    /***********************************************
+     * LOGOUT SPECIFIC DEVICE (MULTI-DEVICE SUPPORT)
+     ***********************************************/
+    public function logoutFromDevice(string $sessionId)
+    {
+        return $this->sessionService->logoutSpecificDevice($sessionId);
+    }
+
+    /***********************************************
+     * SWITCH ROLE
+     ***********************************************/
+    public function switchRole(User $user, string $role)
+    {
+        return $this->sessionService->switchUserRole($role);
+    }
+
+    /***********************************************
+     * FORMAT USER FOR API RESPONSE
+     ***********************************************/
+    private function formatUser(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'email' => $user->email,
+            'name' => $user->name,
+            'status' => $user->status,
+            'roles' => $user->getRoleNames(),
+            'active_role' => $user->getRoleNames()->first(),
+            //'permissions' => $user->getAllPermissions()->pluck('name')
+        ];
+    }
+
+    /***********************************************
+     * EMAIL VERIFICATION LOGIC
+     ***********************************************/
+    public function verifyEmail($token)
+    {
+        $user = User::where('email_verification_token', $token)
+            ->whereNull('email_verified_at')
+            ->first();
+
+        if (!$user) {
+            throw new Exception("Invalid or expired token.");
+        }
+
+        $user->email_verified_at = now();
+        $user->email_verification_token = null;
+        $user->save();
+
+        return $user;
+    }
+
+    public function resendVerificationEmail($email)
+    {
+        $user = User::where('email', $email)->whereNull('email_verified_at')->first();
+        if (!$user) throw new Exception("User not found or already verified.");
+
+        $key = "verify:{$user->id}";
+
+        if (RateLimiter::tooManyAttempts($key, 1)) {
+            throw new Exception("Wait before requesting another verification email.");
+        }
+
+        RateLimiter::hit($key, 3600 * 24);
+
+        $user->email_verification_token = Str::random(60);
+        $user->save();
+
+        $user->sendEmailVerificationNotification();
+
+        return ['message' => 'Verification email resent'];
+    }
+
+    /***********************************************
+     * PASSWORD RESET
+     ***********************************************/
+    public function forgotPassword($email)
+    {
+        $user = User::where('email', $email)->first();
+        if (!$user) throw new Exception("User not found.");
+
+        $token = Str::random(64);
+
+        \DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            ['token' => Hash::make($token), 'created_at' => now()]
+        );
+
+        $user->notify(new \App\Notifications\ForgotPasswordNotification($token));
+
+        return ['message' => 'Password reset email sent'];
+    }
+
+    public function resetPassword($token, $newPassword)
+    {
+        $rows = \DB::table('password_reset_tokens')->get();
+
+        foreach ($rows as $row) {
+            if (Hash::check($token, $row->token)) {
+                $user = User::where('email', $row->email)->first();
+
+                if (!$user) throw new Exception("User not found.");
+
+                $user->password = Hash::make($newPassword);
+                $user->save();
+
+                \DB::table('password_reset_tokens')->where('email', $row->email)->delete();
+
+                $user->notify(new \App\Notifications\ResetPasswordNotification($user));
+
+                return ['message' => 'Password reset successful'];
+            }
+        }
+
+        throw new Exception("Invalid token.");
+    }
+
+    /***********************************************
+     * CURRENT GUARD
+     ***********************************************/
     public function getCurrentGuard($tokenName)
     {
         return Cache::get("auth:guard:{$tokenName}");
     }
 
+    /***********************************************
+     * Guard MApping
+     ***********************************************/
+    /***********************************************
+     * GUARD MAPPING — REQUIRED BY INTERFACE
+     ***********************************************/
+    public function getDefaultGuardForRole($role)
+    {
+        return match ($role) {
+            'Customer' => 'customer-api',
+            'Vendor',
+            'Store Admin',
+            'Order Admin',
+            'Product Admin',
+            'Admin',
+            'Super Admin' => 'admin-api',
+            default => 'customer-api'
+        };
+    }
 
     public function getValidGuardsForRole($role)
     {
-        // Cache the role-guard mapping for better performance
-        return Cache::remember("role-guard-mapping:{$role}", now()->addDay(), function () use ($role) {
-            $roleGuardMap = [
-                'Super Admin' => ['super-admin-api'],
-                'Admin' => ['admin-api'],
-                'Vendor Admin' => ['vendor-admin-api'],
-                'Customer' => ['customer-api'],
-                'Delivery Manager' => ['delivery-manager-api'],
-                'Store Admin' => ['store-admin-api'],
-                'Product Admin' => ['product-admin-api'],
-                'Order Admin' => ['order-admin-api'],
-            ];
-
-            return $roleGuardMap[$role] ?? ['api'];
-        });
-    }
-
-    public function getDefaultGuardForRole($role)
-    {
-        // Cache the default guard mapping for better performance
-        return Cache::remember("default-guard:{$role}", now()->addDay(), function () use ($role) {
-            $mapping = [
-                'Super Admin' => 'super-admin-api',
-                'Admin' => 'admin-api',
-                'Vendor Admin' => 'vendor-admin-api',
-                'Customer' => 'customer-api',
-                'Delivery Manager' => 'delivery-manager-api',
-                'Store Admin' => 'store-admin-api',
-                'Product Admin' => 'product-admin-api',
-                'Order Admin' => 'order-admin-api',
-            ];
-
-            return $mapping[$role] ?? 'api';
-        });
-    }
-
-    public function switchRole(User $user, string $role)
-    {
-        if (!$user->hasRole($role)) {
-            throw new \Exception("User doesn't have this role");
-        }
-
-        $newGuard = $this->getDefaultGuardForRole($role);
-
-        // Delete existing tokens
-        $user->tokens()->delete();
-
-        // Get all permissions for the new role
-        $permissions = $user->getAllPermissions()->pluck('name');
-
-        // Create new token with all permissions
-        $tokenName = $newGuard . '_token_' . now()->timestamp;
-        $token = $user->createToken($tokenName, $permissions->toArray())->plainTextToken;
-
-        $user->update(['current_guard' => $newGuard]);
-
-        return response()->json([
-            'message' => 'Role switched successfully',
-            'token' => $token,
-            'guard' => $newGuard,
-            'role' => $role,
-            'permissions' => $permissions
-        ]);
-    }
-
-    public function verifyEmail($token)
-    {
-        $user = User::where('email_verified_at', null)
-            ->where('email_verification_token', $token)
-            ->first();
-
-        if ($user) {
-            $user->email_verified_at = now();
-            $user->email_verification_token = null;
-            $user->save();
-            return $user;
-        }
-
-        throw new \Exception("Invalid or expired token");
-    }
-
-    public function resendVerificationEmail($email)
-    {
-        $user = User::where('email', $email)
-            ->whereNull('email_verified_at')
-            ->first();
-
-        if (!$user) {
-            throw new \Exception("User not found or already verified");
-        }
-
-        // Create a rate limiter key specific to this user's email verification requests
-        $key = 'email_verification:' . $user->id;
-        $maxAttempts = 1; // Only allow one request per period
-        $decayHours = 24; // 24-hour cooldown
-
-        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
-            $seconds = RateLimiter::availableIn($key);
-            $hours = ceil($seconds / 3600);
-
-            throw new \Exception("You can only request a verification email once every 24 hours. Please try again in {$hours} hours.");
-        }
-
-        // If they haven't hit the limit, proceed with sending
-        RateLimiter::hit($key, $decayHours * 3600);
-
-        // Generate new token if you want to invalidate old ones (optional)
-        $user->email_verification_token = Str::random(60);
-        $user->save();
-
-        // Send verification email (you'll need to implement this notification)
-        $user->notify(new \App\Notifications\VerifyEmailNotification($user->email_verification_token));
-
-        return response()->json([
-            'message' => 'Verification email resent successfully',
-            'next_request_allowed_in' => $decayHours . ' hours'
-        ]);
-    }
-
-    public function forgotPassword($email)
-    {
-        $user = User::where('email', $email)->first();
-
-        if (!$user) {
-            throw new \Exception("User not found");
-        }
-
-        $token = Str::random(60);
-        DB::table('password_reset_tokens')->updateOrInsert(
-            ['email' => $email],
-            ['token' => Hash::make($token), 'created_at' => now()]
-        );
-
-        // Send password reset notification
-        $user->notify(new ForgotPasswordNotification($token));
-
-        return response()->json(['message' => 'Password reset email sent successfully.']);
-    }
-
-    protected function sendPasswordResetEmail($user, $token)
-    {
-        // Send the email using the EmailRepository
-        //app(EmailRepositoryInterface::class)->sendEmail($user, 'password_reset_email', ['token' => $token]);
-    }
-
-    public function resetPassword($token, $newPassword)
-    {
-        $resets = DB::table('password_reset_tokens')->get();
-
-        foreach ($resets as $reset) {
-            if (Hash::check($token, $reset->token)) {
-                $user = User::where('email', $reset->email)->first();
-
-                if ($user) {
-                    $user->password = Hash::make($newPassword);
-                    $user->save();
-
-                    $user->notify(new ResetPasswordNotification($user));
-
-                    DB::table('password_reset_tokens')->where('email', $reset->email)->delete();
-
-                    return response()->json(['message' => 'Password reset successfully. A confirmation email has been sent.']);
-                }
-
-                throw new \Exception("User not found");
-            }
-        }
-
-        throw new \Exception("Invalid or expired token");
-    }
-
-    public function logout()
-    {
-        $user = Auth::user();
-
-        if (!$user) {
-            throw new \Exception('User not authenticated');
-        }
-
-        $user->tokens->each(function ($token) {
-            $token->delete();
-        });
-
-        return true;
+        return match ($role) {
+            'Customer' => ['customer-api'],
+            'Vendor',
+            'Store Admin',
+            'Product Admin',
+            'Order Admin',
+            'Admin',
+            'Super Admin' => ['admin-api'],
+            default => ['customer-api']
+        };
     }
 }

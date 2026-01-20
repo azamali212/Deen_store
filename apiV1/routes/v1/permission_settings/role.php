@@ -29,4 +29,16 @@ Route::middleware('auth:api')->group(function () {
 
     //All have otimize Route
     Route::get('/roles/details/{slug}', [RoleController::class, 'getRoleDetails']);
+    Route::prefix('role-requests')->group(function () {
+        // For super admins - use 'api' guard
+        Route::middleware('role:Super Admin')->group(function () {
+            Route::get('/pending', [RoleController::class, 'getPendingRequests']);
+            Route::get('/stats', [RoleController::class, 'getRequestStats']);
+            Route::post('/{id}/approve', [RoleController::class, 'approveRequest']); // Change {id} to {ulid}
+            Route::post('/{id}/reject', [RoleController::class, 'rejectRequest']);   // Change {id} to {ulid}
+        });
+        
+        // For regular users
+        Route::get('/my-requests', [RoleController::class, 'getMyPendingRequests']);
+    });
 });

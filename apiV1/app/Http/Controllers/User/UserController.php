@@ -51,6 +51,7 @@ class UserController extends Controller
                 'inactive_users'  => $inactiveUsers,
                 'admin_users'     =>   $adminUsers,
                 'customer_users'  => $customerUsers,
+                'location_data' => '$location',
             ]
         ]);
     }

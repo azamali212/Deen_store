@@ -48,7 +48,8 @@ class UserRepository implements UserRepositoryInterface
                 } elseif ($key === 'created_at') {
                     $query->whereDate('created_at', $value);
                 } elseif ($key === 'location') {
-                    $query->where('last_known_location', 'like', '%' . $value . '%');
+                    // Use 'location' field instead of 'last_known_location'
+                    $query->where('location', 'like', '%' . $value . '%');
                 }
             }
         }
@@ -79,9 +80,8 @@ class UserRepository implements UserRepositoryInterface
                 'role_permissions' => $user->getPermissionsViaRoles()->pluck('name'),
             ];
 
-            // Add location data
             $user->location_data = [
-                'last_known_location' => $user->last_known_location,
+                'last_known_location' => $user->location, // Changed from last_known_location to location
                 'latitude' => $user->latitude,
                 'longitude' => $user->longitude,
                 'last_location_updated_at' => $user->last_location_updated_at,
@@ -107,10 +107,23 @@ class UserRepository implements UserRepositoryInterface
             return false;
         }
 
-        // Convert to Carbon instance if it's a string
-        $lastLogin = $this->parseDateTime($user->last_login_at);
+        try {
+            $lastLogin = $this->parseDateTime($user->last_login_at);
+            return $lastLogin && $lastLogin->gt(now()->subMinutes(5));
+        } catch (\Exception $e) {
+            Log::warning("Error checking if user is online: {$e->getMessage()}");
+            return false;
+        }
+    }
 
-        return $lastLogin && $lastLogin->gt(now()->subMinutes(5));
+    private function formatDateTime($datetime): string
+    {
+        if (!$datetime) {
+            return 'Never';
+        }
+
+        $carbon = $this->parseDateTime($datetime);
+        return $carbon ? $carbon->diffForHumans() : 'Invalid Date';
     }
 
     /**
@@ -137,11 +150,7 @@ class UserRepository implements UserRepositoryInterface
     /**
      * Format datetime for display
      */
-    private function formatDateTime($datetime): string
-    {
-        $carbon = $this->parseDateTime($datetime);
-        return $carbon ? $carbon->diffForHumans() : 'Invalid Date';
-    }
+
 
     /**
      * Update user's current location

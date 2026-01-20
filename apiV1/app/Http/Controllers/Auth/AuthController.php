@@ -11,7 +11,10 @@ use App\Repositories\Auth\AuthRepository;
 use App\Repositories\Auth\AuthRepositoryInterface;
 use App\Repositories\Email\EmailRepositoryInterface;
 use Illuminate\Http\Request;
-
+use App\Services\Auth\OtpService;
+use App\Services\Auth\SessionService;
+use App\Services\Auth\TokenService;
+use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
@@ -26,6 +29,9 @@ class AuthController extends Controller
 
     public function register(RegisterValidationRequest $request)
     {
+        $request->validate([
+            'role' => 'required|exists:roles,name',
+        ]);
         try {
             // Register user
             $user = $this->authRepository->register($request->validated());
@@ -43,15 +49,56 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
+            'email'    => 'required|email',
             'password' => 'required',
-            'guard' => 'sometimes|string' // Optional guard parameter
+            'portal'   => 'required|string|in:admin,customer'
         ]);
 
-        return $this->authRepository->login(
-            $request->only('email', 'password'),
-            $request->input('guard')
-        );
+        try {
+            // IMPORTANT: Controller never handles guard/token/session
+            // All logic must run inside repository
+            $response = $this->authRepository->login(
+                $request->only('email', 'password'),
+                $request->portal,   // pass portal to repository
+                [
+                    'ip'      => $request->ip(),
+                    'browser' => $request->userAgent(),
+                ]
+            );
+
+            return response()->json($response, 200);
+        } catch (\Exception $e) {
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    public function verifyOtp(Request $request)
+    {
+        $data = $request->validate([
+            'email' => 'required|email',
+            'session_id' => 'required|string',
+            'otp' => 'required|string',
+            'portal' => 'required|string|in:admin,customer'
+        ]);
+    
+        try {
+            return response()->json(
+                $this->authRepository->verifyOtp(
+                    $data['email'],
+                    $data['session_id'],
+                    $data['otp']
+                )
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
     }
 
     public function verifyEmail(Request $request)
@@ -113,6 +160,23 @@ class AuthController extends Controller
         return $authRepository->forgotPassword($request->email);
     }
 
+    /***********************************************
+     * GET USER PROFILE
+     ***********************************************/
+    public function getProfile()
+    {
+        try {
+            return response()->json(
+                $this->authRepository->getCurrentUser()
+            );
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 400);
+        }
+    }
+    
     public function resetPassword(Request $request, AuthRepository $authRepository)
     {
         $request->validate([
