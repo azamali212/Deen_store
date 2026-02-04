@@ -30,15 +30,20 @@ Route::middleware('auth:api')->group(function () {
     //All have otimize Route
     Route::get('/roles/details/{slug}', [RoleController::class, 'getRoleDetails']);
     Route::prefix('role-requests')->group(function () {
-        // For super admins - use 'api' guard
+        // For super admins
         Route::middleware('role:Super Admin')->group(function () {
             Route::get('/pending', [RoleController::class, 'getPendingRequests']);
             Route::get('/stats', [RoleController::class, 'getRequestStats']);
-            Route::post('/{id}/approve', [RoleController::class, 'approveRequest']); // Change {id} to {ulid}
-            Route::post('/{id}/reject', [RoleController::class, 'rejectRequest']);   // Change {id} to {ulid}
+            Route::get('/notification-stats', [RoleController::class, 'getNotificationStats']);
+            Route::post('/{id}/approve', [RoleController::class, 'approveRequest']);
+            Route::post('/{id}/reject', [RoleController::class, 'rejectRequest']);
+            Route::post('/{id}/resend-notifications', [RoleController::class, 'resendNotifications']);
+            Route::post('/escalate-overdue', [RoleController::class, 'escalateOverdueRequests']);
+            Route::get('/overdue', [RoleController::class, 'getOverdueRequests']); // Add this method to controller
         });
         
         // For regular users
         Route::get('/my-requests', [RoleController::class, 'getMyPendingRequests']);
+        Route::get('/my-requests/{id}', [RoleController::class, 'getMyRequestDetails']); // Add this method
     });
 });
