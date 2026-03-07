@@ -33,24 +33,19 @@ class RoleRepository implements RoleRepositoryInterface
         return Role::findOrFail($id); // Finds the role by ID or throws an exception if not found
     }
 
-    // Create a new role
-    // Create a new role and optionally assign permissions
     public function createRole($data)
     {
         DB::beginTransaction();
 
         try {
-            // Create the role
             $role = Role::create([
                 'name' => $data['name'],
                 'slug' => $data['slug'] ?? null,
             ]);
 
-            // Optionally assign permissions
             if (!empty($data['permission_names']) && is_array($data['permission_names'])) {
                 $permissions = Permission::whereIn('name', $data['permission_names'])->get();
 
-                // Validate all requested permissions exist
                 if ($permissions->count() !== count($data['permission_names'])) {
                     throw new \Exception('Some permissions do not exist');
                 }

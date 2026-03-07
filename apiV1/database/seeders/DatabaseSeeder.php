@@ -19,8 +19,8 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // User::factory(10)->create();
-        \App\Models\Email::factory(10)->create();
-        EmailStatusFactory::new()->count(10)->create();
+        //\App\Models\Email::factory(10)->create();
+        //EmailStatusFactory::new()->count(10)->create();
 
         User::factory()->create([
             'name' => 'Test User',
@@ -44,6 +44,7 @@ class DatabaseSeeder extends Seeder
         $this->call([OrderManagerSeeder::class]);
         $this->call(OrderItemSeeder::class);
         $this->call(InventorySeeder::class);
+        $this->call(NotificationTemplateSeeder::class);
         // Seed Supplier Categories
         SupplierCategory::factory(5)->create();
 

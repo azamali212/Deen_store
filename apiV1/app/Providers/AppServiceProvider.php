@@ -12,10 +12,6 @@ use App\Repositories\Coupons\CouponsRepository;
 use App\Repositories\Coupons\CouponsRepositoryInterface;
 use App\Repositories\CustomerManagement\CustomerRepository;
 use App\Repositories\CustomerManagement\CustomerRepositoryInterface;
-use App\Repositories\Email\EmailDraftsRepository;
-use App\Repositories\Email\EmailDraftsRepositoryInterface;
-use App\Repositories\Email\EmailRepository;
-use App\Repositories\Email\EmailRepositoryInterface;
 use App\Repositories\Inventory\InventoryRepository;
 use App\Repositories\Inventory\InventoryRepositoryInterface;
 use App\Repositories\Order\Order_tracking\OrderTrackingRepository;
@@ -62,7 +58,7 @@ class AppServiceProvider extends ServiceProvider
             $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);  // Keep only this line
         }
         $this->app->bind(AuthRepositoryInterface::class, AuthRepository::class);
-        $this->app->bind(EmailRepositoryInterface::class, EmailRepository::class);
+        
         $this->app->bind(UserRepositoryInterface::class,UserRepository::class);
         $this->app->bind(RoleRepositoryInterface::class,RoleRepository::class);
         $this->app->bind(PermissionRepositoryInterface::class,concrete: PermissionRepository::class);
@@ -85,7 +81,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(CollaborativeFilteringRepositoryInterface::class,CollaborativeFilteringRepository::class);
         $this->app->bind(GeolocationRecommendationRepositoryInterface::class,GeolocationRecommendationRepository::class);
         $this->app->bind(CategoryRepositoryInterface::class,CategoryRepository::class);
-        $this->app->bind(EmailDraftsRepositoryInterface::class,EmailDraftsRepository::class);
+       
         $this->app->bind(CartRepositoryInterface::class,CartRepository::class);
         $this->app->bind(CouponsRepositoryInterface::class,CouponsRepository::class);
         $this->app->bind(OrderRepositoryInterface::class, OrderRepository::class);
@@ -94,6 +90,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(StripePaymentRepositoryInterface::class,StripePaymentRepository::class);
         $this->app->bind(OrderTrackingRepositoryInterface::class,OrderTrackingRepository::class);
         $this->app->bind(CustomerRepositoryInterface::class,CustomerRepository::class);
+       
 
         
         //Validations Services

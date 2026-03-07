@@ -9,7 +9,7 @@ interface RoleRepositoryInterface
     
     public function getRoleById($id);
     
-    public function createRole($data);
+    public function createRole(array $data);
     
     public function updateRole($data, $id);
     

@@ -2,31 +2,27 @@
 
 namespace App\Http\Controllers\Permission_Settings;
 
+use App\Domain\Roles\Services\RoleApprovalService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Role\StoreRoleRequest;
 use App\Http\Requests\Role\UpdateRoleRequest;
 use App\Models\PendingRoleRequest;
-use App\Models\User;
 use App\Repositories\PermissionSettings\Role\RoleRepositoryInterface;
-use App\Services\Notifications\RoleNotificationService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class RoleController extends Controller
 {
-    protected $roleRepository;
-    protected $notificationService;
-
     public function __construct(
-        RoleRepositoryInterface $roleRepository,
-        RoleNotificationService $notificationService = null
-    ) {
-        $this->roleRepository = $roleRepository;
-        $this->notificationService = $notificationService ?? new RoleNotificationService();
-    }
+        protected RoleRepositoryInterface $roleRepository,
+        protected RoleApprovalService $roleApprovalService,
+    ) {}
 
+    /**
+     * List all roles
+     */
     public function index(Request $request): JsonResponse
     {
         $roles = $this->roleRepository->getRoles(
@@ -37,105 +33,286 @@ class RoleController extends Controller
         return response()->json($roles);
     }
 
-    // MODIFIED: Store method with approval system
-    // MODIFIED: Store method with approval system
-
+    /**
+     * Create role directly if Super Admin.
+     * Otherwise create pending approval request.
+     */
     public function store(StoreRoleRequest $request): JsonResponse
     {
-        $validated = $request->validated();
-        $user = Auth::user();
-        $isSuperAdmin = $user->hasRole('Super Admin', 'api');
-
-        // If super admin, create role directly
-        if ($isSuperAdmin) {
-            try {
-                $role = $this->roleRepository->createRole($validated);
-                return response()->json([
-                    'message' => 'Role created successfully',
-                    'data' => $role
-                ], 201);
-            } catch (\Exception $e) {
-                return response()->json([
-                    'message' => 'Failed to create role',
-                    'error' => $e->getMessage()
-                ], 500);
-            }
-        }
-
-        // If not super admin, create pending request
-        DB::beginTransaction();
         try {
-            // Check for duplicate pending request
-            $duplicate = PendingRoleRequest::where('name', $validated['name'])
-                ->where('created_by', $user->id)
-                ->pending()
-                ->exists();
+            $validated = $request->validated();
+            $user = $request->user();
 
-            if ($duplicate) {
-                throw new \Exception('You already have a pending request for this role name.');
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthorized'
+                ], 401);
             }
 
-            // Check if role already exists
-            if (\Spatie\Permission\Models\Role::where('name', $validated['name'])->exists()) {
-                throw new \Exception('A role with this name already exists.');
+            // Super Admin -> create immediately
+            if ($user->hasRole('Super Admin', 'api')) {
+                $role = $this->roleRepository->createRole($validated);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Role created successfully.',
+                    'data' => $role,
+                    'requires_approval' => false,
+                ], 201);
             }
 
-            // Create pending request with metadata
-            $pendingRequest = PendingRoleRequest::create([
-                'name' => $validated['name'],
-                'slug' => $validated['slug'] ?? null,
-                'permission_names' => $validated['permission_names'] ?? [],
-                'description' => $validated['description'] ?? null,
-                'created_by' => $user->id,
-                'status' => 'pending',
-                'metadata' => [
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                    'permission_count' => count($validated['permission_names'] ?? []),
-                    'priority' => $this->calculatePriority($validated)
-                ]
+            // Other admin roles -> approval request
+            $pending = $this->roleApprovalService->requestRole(
+                $validated,
+                (string) $user->id
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Role request submitted successfully. Waiting for Super Admin approval.',
+                'data' => $pending,
+                'requires_approval' => true,
+            ], 201);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to submit role request.',
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Super Admin -> approve pending role request
+     */
+    public function approveRequest(string $id, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user || !$user->hasRole('Super Admin', 'api')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $role = $this->roleApprovalService->approve(
+                $id,
+                (string) $user->id
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Role request approved successfully.',
+                'role' => $role,
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to approve role request.',
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Super Admin -> reject pending role request
+     */
+    public function rejectRequest(string $id, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user || !$user->hasRole('Super Admin', 'api')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $validated = $request->validate([
+                'reason' => 'required|string|min:5|max:500',
             ]);
 
-            // Use notification service for robust notifications
-            $this->notificationService->notifySuperAdmins($pendingRequest);
-
-            // Notify creator immediately
-            $this->notificationService->notifyCreator($pendingRequest, 'pending');
-
-            DB::commit();
+            $pendingRequest = $this->roleApprovalService->reject(
+                $id,
+                (string) $user->id,
+                $validated['reason']
+            );
 
             return response()->json([
-                'message' => 'Role request submitted successfully. Waiting for super admin approval.',
-                'data' => $pendingRequest,
-                'requires_approval' => true,
-                'estimated_time' => '24-48 hours',
-                'tracking_id' => $pendingRequest->id
-            ], 201);
-        } catch (\Exception $e) {
-            DB::rollBack();
+                'success' => true,
+                'message' => 'Role request rejected successfully.',
+                'request' => $pendingRequest,
+            ], 200);
+        } catch (Throwable $e) {
             return response()->json([
-                'message' => 'Failed to submit role request',
-                'error' => $e->getMessage()
-            ], 500);
+                'success' => false,
+                'message' => 'Failed to reject role request.',
+                'error' => $e->getMessage(),
+            ], 422);
         }
     }
 
-    private function calculatePriority(array $data): string
+    /**
+     * Super Admin -> list pending requests
+     */
+    public function getPendingRequests(Request $request): JsonResponse
     {
-        $criticalPermissions = config('notification.critical_permissions', []);
-        $permissions = $data['permission_names'] ?? [];
+        try {
+            $user = $request->user();
 
-        $intersection = array_intersect($criticalPermissions, $permissions);
+            if (!$user || !$user->hasRole('Super Admin', 'api')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
 
-        return !empty($intersection) ? 'high' : 'normal';
+            $perPage = (int) $request->get('per_page', 15);
+            $search = $request->get('search');
+
+            $query = PendingRoleRequest::query()
+                ->where('status', 'pending')
+                ->latest();
+
+            if (!empty($search)) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('slug', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+                });
+            }
+
+            $requests = $query->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $requests,
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch pending requests.',
+                'error' => $e->getMessage(),
+            ], 422);
+        }
     }
 
+    /**
+     * Logged-in user -> list own role requests
+     */
+    public function getMyPendingRequests(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $perPage = (int) $request->get('per_page', 15);
+
+            $requests = PendingRoleRequest::query()
+                ->where('created_by', (string) $user->id)
+                ->latest()
+                ->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => $requests,
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch your role requests.',
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Logged-in user -> single own request detail
+     */
+    public function getMyRequestDetails(string $id, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $roleRequest = PendingRoleRequest::query()
+                ->where('id', $id)
+                ->where('created_by', (string) $user->id)
+                ->firstOrFail();
+
+            return response()->json([
+                'success' => true,
+                'data' => $roleRequest,
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch role request details.',
+                'error' => $e->getMessage(),
+            ], 404);
+        }
+    }
+
+    /**
+     * Super Admin -> single request detail
+     */
+    public function getRequestDetails(string $id, Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user || !$user->hasRole('Super Admin', 'api')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+
+            $roleRequest = PendingRoleRequest::query()
+                ->where('id', $id)
+                ->firstOrFail();
+
+            return response()->json([
+                'success' => true,
+                'data' => $roleRequest,
+            ], 200);
+        } catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch request details.',
+                'error' => $e->getMessage(),
+            ], 404);
+        }
+    }
+
+    /**
+     * Show role by id
+     */
     public function show($id): JsonResponse
     {
         $role = $this->roleRepository->getRoleById($id);
+
         return response()->json($role);
     }
 
+    /**
+     * Update role
+     */
     public function update(UpdateRoleRequest $request, $id): JsonResponse
     {
         $data = $request->validated();
@@ -147,6 +324,9 @@ class RoleController extends Controller
         ]);
     }
 
+    /**
+     * Delete single role
+     */
     public function destroy($id): JsonResponse
     {
         $this->roleRepository->deleteRole($id);
@@ -156,26 +336,31 @@ class RoleController extends Controller
         ]);
     }
 
-    public function destroyMultiple(Request $request)
+    /**
+     * Delete multiple roles
+     */
+    public function destroyMultiple(Request $request): JsonResponse
     {
-        $data = $request->validate([
+        $request->validate([
             'role_ids' => 'required|array',
             'role_ids.*' => 'integer|exists:roles,id'
         ]);
 
-        try {
-            $this->roleRepository->deleteMultipleRoles($request->role_ids);
-            return response()->json(['message' => 'Roles deleted successfully.'], 200);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+        $this->roleRepository->deleteMultipleRoles($request->role_ids);
+
+        return response()->json([
+            'message' => 'Roles deleted successfully.'
+        ], 200);
     }
 
+    /**
+     * Attach permissions to role
+     */
     public function attachPermissions(Request $request, $id): JsonResponse
     {
         $data = $request->validate([
             'permission_names' => 'required|array',
-            'permission_names.*' => 'string' // Ensure each item is a string
+            'permission_names.*' => 'string'
         ]);
 
         $role = $this->roleRepository->attachPermissions([
@@ -189,6 +374,9 @@ class RoleController extends Controller
         ]);
     }
 
+    /**
+     * Detach permissions from role
+     */
     public function detachPermissions(Request $request, $id): JsonResponse
     {
         $data = $request->validate([
@@ -201,7 +389,6 @@ class RoleController extends Controller
             'permission_ids' => $data['permission_ids'],
         ]);
 
-        // Fetch the role again from the database to ensure updated data
         $role = $this->roleRepository->getRoleById($id);
 
         return response()->json([
@@ -210,11 +397,14 @@ class RoleController extends Controller
         ]);
     }
 
+    /**
+     * Attach users to role
+     */
     public function attachUsers(Request $request, $id): JsonResponse
     {
         $data = $request->validate([
             'user_ids' => 'required|array',
-            'user_ids.*' => 'string|exists:users,id', // Change 'exists' to expect a string ID
+            'user_ids.*' => 'string|exists:users,id',
         ]);
 
         $role = $this->roleRepository->attachUsers([
@@ -229,7 +419,7 @@ class RoleController extends Controller
     }
 
     /**
-     * Detach users from the role.
+     * Detach users from role
      */
     public function detachUsers(Request $request, $id): JsonResponse
     {
@@ -249,370 +439,60 @@ class RoleController extends Controller
         ]);
     }
 
+    /**
+     * Get role permissions
+     */
     public function getPermissions($id, Request $request): JsonResponse
     {
-        $permissions = $this->roleRepository->getRolePermissions($id, $request->get('per_page', 15));
+        $permissions = $this->roleRepository->getRolePermissions(
+            $id,
+            $request->get('per_page', 15)
+        );
+
         return response()->json($permissions);
     }
 
     /**
-     * Display the users assigned to the role.
+     * Get role users
      */
     public function getUsers($id, Request $request): JsonResponse
     {
-        $users = $this->roleRepository->getRoleUsers($id, $request->get('per_page', 15));
+        $users = $this->roleRepository->getRoleUsers(
+            $id,
+            $request->get('per_page', 15)
+        );
+
         return response()->json($users);
     }
 
-    // public function getRoleBySlug($slug): JsonResponse
-    // {
-    //     $role = $this->roleRepository->getRoleBySlug($slug);
-    //     return response()->json(['role' => $role]);
-    // }
-    // public function getRolePermissionsBySlugAndUser($slug, Request $request): JsonResponse
-    // {
-    //     $user = $request->user();
-    //     $perPage = $request->get('per_page', 15);
-
-    //     $permissions = $this->roleRepository->getRolePermissionsBySlugAndUser($slug, $user, $perPage);
-    //     return response()->json($permissions);
-    // }
-    // public function getRoleBySlugAndUser($slug, Request $request): JsonResponse
-    // {
-    //     $user = $request->user();
-    //     $role = $this->roleRepository->getRoleBySlugAndUser($slug, $user);
-
-    //     return response()->json(['role' => $role]);
-    // }
-
-    // public function getRoleBySlugAndUserId($slug, $userId): JsonResponse
-    // {
-    //     $role = $this->roleRepository->getRoleBySlugAndUserId($slug, $userId);
-    //     return response()->json(['role' => $role]);
-    // }
-
-    // public function getRolePermissionsBySlugAndUserId($slug, $userId, Request $request): JsonResponse
-    // {
-    //     $perPage = $request->get('per_page', 15);
-    //     $permissions = $this->roleRepository->getRolePermissionsBySlugAndUserId($slug, $userId, $perPage);
-
-    //     return response()->json($permissions);
-    // }
-
-    // public function getRoleBySlugAndUserEmail($slug, $email): JsonResponse
-    // {
-    //     $role = $this->roleRepository->getRoleBySlugAndUserEmail($slug, $email);
-    //     return response()->json(['role' => $role]);
-    // }
-
-    // public function getRolePermissionsBySlugAndUserEmail($slug, $email, Request $request): JsonResponse
-    // {
-    //     $perPage = $request->get('per_page', 15);
-    //     $permissions = $this->roleRepository->getRolePermissionsBySlugAndUserEmail($slug, $email, $perPage);
-
-    //     return response()->json($permissions);
-    // }
-
-    //Method Get Role Details Optimize way to get all details of roles
-    public function getRoleDetails($slug, Request $request)
+    /**
+     * Get role details with related data
+     */
+    public function getRoleDetails($slug, Request $request): JsonResponse
     {
-        try {
-            $userId = $request->query('user_id');
-            $email = $request->query('email');
+        $userId = $request->query('user_id');
+        $email = $request->query('email');
 
-            // Convert user_id to integer only if it's numeric
-            $userId = is_numeric($userId) ? (int) $userId : null;
+        $userId = is_numeric($userId) ? (int) $userId : null;
 
-            $role = $this->roleRepository->getRoleBySlug($slug);
-            $permissions = $role->permissions;
-            $users = $role->users;
+        $role = $this->roleRepository->getRoleBySlug($slug);
+        $permissions = $role->permissions;
+        $users = $role->users;
 
-            // Query role based on user_id or email if provided
-            $roleByUser = $userId ? $this->roleRepository->getRoleBySlugAndUserId($slug, $userId) : null;
-            $roleByEmail = $email ? $this->roleRepository->getRoleBySlugAndUserEmail($slug, $email) : null;
+        $roleByUser = $userId
+            ? $this->roleRepository->getRoleBySlugAndUserId($slug, $userId)
+            : null;
 
-            return response()->json([
-                'role' => $role,
-                'permissions' => $permissions,
-                'users' => $users,
-                'role_by_user' => $roleByUser,
-                'role_by_email' => $roleByEmail,
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 404);
-        }
-    }
-
-    // NEW: Get all pending role requests (for super admins)
-    // NEW: Get all pending role requests (for super admins)
-    public function getPendingRequests(Request $request): JsonResponse
-    {
-        $user = Auth::user();
-        // Use 'api' guard consistently
-        if (!$user->hasRole('Super Admin', 'api')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $perPage = $request->get('per_page', 15);
-        $search = $request->get('search');
-
-        $requests = PendingRoleRequest::pending()
-            ->with('creator')
-            ->when($search, function ($query) use ($search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('slug', 'like', "%{$search}%")
-                        ->orWhereHas('creator', function ($q) use ($search) {
-                            $q->where('name', 'like', "%{$search}%")
-                                ->orWhere('email', 'like', "%{$search}%");
-                        });
-                });
-            })
-            ->latest()
-            ->paginate($perPage);
+        $roleByEmail = $email
+            ? $this->roleRepository->getRoleBySlugAndUserEmail($slug, $email)
+            : null;
 
         return response()->json([
-            'data' => $requests
-        ]);
-    }
-
-    // NEW: Get my pending requests
-    // NEW: Get my pending requests
-    public function getMyPendingRequests(Request $request): JsonResponse
-    {
-        $user = Auth::user();
-        $perPage = $request->get('per_page', 15);
-
-        // FIX: Use $user->id instead of $user->id()
-        $requests = PendingRoleRequest::where('created_by', $user->id)
-            ->latest()
-            ->paginate($perPage);
-
-        return response()->json([
-            'data' => $requests
-        ]);
-    }
-
-    // NEW: Approve pending request
-    // NEW: Approve pending request
-    public function approveRequest($ulid): JsonResponse
-    {
-        $user = Auth::user();
-        if (!$user->hasRole('Super Admin', 'api')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        DB::beginTransaction();
-        try {
-            $pendingRequest = PendingRoleRequest::where('id', $ulid)->firstOrFail();
-
-            if (!$pendingRequest->isPending()) {
-                throw new \Exception('Request is not in pending status.');
-            }
-
-            // Check for existing role with same name
-            if (\Spatie\Permission\Models\Role::where('name', $pendingRequest->name)->exists()) {
-                throw new \Exception('A role with this name already exists.');
-            }
-
-            // Create actual role
-            $roleData = [
-                'name' => $pendingRequest->name,
-                'slug' => $pendingRequest->slug,
-                'permission_names' => $pendingRequest->permission_names ?? []
-            ];
-
-            $role = $this->roleRepository->createRole($roleData);
-
-            // Update request status with metadata
-            $pendingRequest->update([
-                'status' => 'approved',
-                'approved_by' => $user->id,
-                'approved_at' => now(),
-                'metadata' => array_merge(
-                    $pendingRequest->metadata ?? [],
-                    [
-                        'approval_duration' => $pendingRequest->created_at->diffInHours(now()),
-                        'approver_details' => [
-                            'id' => $user->id,
-                            'email' => $user->email,
-                            'name' => $user->name
-                        ]
-                    ]
-                )
-            ]);
-
-            // Notify creator using service
-            $this->notificationService->notifyCreator($pendingRequest, 'approved', $user);
-
-            // Log approval activity
-            activity()
-                ->causedBy($user)
-                ->performedOn($role)
-                ->withProperties([
-                    'request_id' => $pendingRequest->id,
-                    'old_status' => 'pending',
-                    'new_status' => 'approved'
-                ])
-                ->log('approved_role_request');
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Role request approved successfully. Role has been created.',
-                'role' => $role,
-                'request' => $pendingRequest,
-                'duration' => $pendingRequest->created_at->diffForHumans(now(), true),
-                'notifications_sent' => true
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to approve request',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-
-    // NEW: Reject pending request
-    // NEW: Reject pending request
-    public function rejectRequest(Request $request, $ulid): JsonResponse
-    {
-        $user = Auth::user();
-        if (!$user->hasRole('Super Admin', 'api')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $validated = $request->validate([
-            'reason' => 'required|string|min:5|max:500'
-        ]);
-
-        DB::beginTransaction();
-        try {
-            $pendingRequest = PendingRoleRequest::where('id', $ulid)->firstOrFail();
-
-            if (!$pendingRequest->isPending()) {
-                throw new \Exception('Request is not in pending status.');
-            }
-
-            // Update request status
-            $pendingRequest->update([
-                'status' => 'rejected',
-                'approved_by' => $user->id,
-                'rejection_reason' => $validated['reason'],
-                'rejected_at' => now(),
-                'metadata' => array_merge(
-                    $pendingRequest->metadata ?? [],
-                    [
-                        'rejection_details' => [
-                            'reason_length' => strlen($validated['reason']),
-                            'rejected_by' => $user->email,
-                            'request_age' => $pendingRequest->created_at->diffInHours(now())
-                        ]
-                    ]
-                )
-            ]);
-
-            // Notify creator using service
-            $this->notificationService->notifyCreator($pendingRequest, 'rejected', $user);
-
-            // Log rejection activity
-            activity()
-                ->causedBy($user)
-                ->performedOn($pendingRequest)
-                ->withProperties(['reason' => $validated['reason']])
-                ->log('rejected_role_request');
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Role request rejected successfully',
-                'request' => $pendingRequest,
-                'feedback_provided' => true
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to reject request',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    // NEW: Get notification statistics
-    public function getNotificationStats(): JsonResponse
-    {
-        $user = Auth::user();
-        if (!$user->hasRole('Super Admin', 'api')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $stats = $this->notificationService->getNotificationStats();
-        
-        return response()->json([
-            'data' => $stats,
-            'timestamp' => now()
-        ]);
-    }
-
-    public function resendNotifications(Request $request, $ulid): JsonResponse
-    {
-        $user = Auth::user();
-        if (!$user->hasRole('Super Admin', 'api')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $pendingRequest = PendingRoleRequest::where('id', $ulid)->firstOrFail();
-        
-        if (!$pendingRequest->isPending()) {
-            return response()->json([
-                'message' => 'Cannot resend notifications for non-pending requests'
-            ], 400);
-        }
-
-        $success = $this->notificationService->notifySuperAdmins($pendingRequest);
-        
-        return response()->json([
-            'message' => $success ? 'Notifications resent successfully' : 'Failed to resend notifications',
-            'success' => $success,
-            'request' => $pendingRequest,
-            'last_notified' => $pendingRequest->notified_at
-        ]);
-    }
-
-    // NEW: Escalate overdue requests
-    public function escalateOverdueRequests(): JsonResponse
-    {
-        $user = Auth::user();
-        if (!$user->hasRole('Super Admin', 'api')) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $escalatedCount = $this->notificationService->escalateOverdueRequests();
-        
-        return response()->json([
-            'message' => "Escalated {$escalatedCount} overdue requests",
-            'escalated_count' => $escalatedCount,
-            'timestamp' => now()
-        ]);
-    }
-
-    // NEW: Get request statistics
-    public function getRequestStats(): JsonResponse
-    {
-        $stats = [
-            'total' => PendingRoleRequest::count(),
-            'pending' => PendingRoleRequest::pending()->count(),
-            'approved' => PendingRoleRequest::approved()->count(),
-            'rejected' => PendingRoleRequest::rejected()->count(),
-            'today_pending' => PendingRoleRequest::pending()
-                ->whereDate('created_at', today())
-                ->count()
-        ];
-
-        return response()->json([
-            'data' => $stats
-        ]);
+            'role' => $role,
+            'permissions' => $permissions,
+            'users' => $users,
+            'role_by_user' => $roleByUser,
+            'role_by_email' => $roleByEmail,
+        ], 200);
     }
 }

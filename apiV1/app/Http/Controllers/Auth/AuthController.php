@@ -21,10 +21,10 @@ class AuthController extends Controller
     protected $authRepository;
     protected $emailRepository;
 
-    public function __construct(AuthRepositoryInterface $authRepository, EmailRepositoryInterface $emailRepository)
+    public function __construct(AuthRepositoryInterface $authRepository)
     {
         $this->authRepository = $authRepository;
-        $this->emailRepository = $emailRepository;
+        //$this->emailRepository = $emailRepository;
     }
 
     public function register(RegisterValidationRequest $request)
