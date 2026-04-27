@@ -1,50 +1,80 @@
 <?php
+
+
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Email extends Model
+final class Email extends Model
 {
-    
-    use HasFactory,SoftDeletes;
+    use HasFactory;
 
     protected $fillable = [
+        'uuid',
+        'thread_id',
+        'parent_email_id',
         'sender_id',
-        'receiver_id',
-        'from_email',
-        'to_email',
         'subject',
         'body',
+        'excerpt',
+        'priority',
+        'type',
+        'status',
+        'metadata',
+        'sent_at',
     ];
-    protected $dates = ['deleted_at'];
 
-    public function isTrashed(): bool
-    {
-        return $this->trashed();
-    }
-    /**
-     * Get the sender associated with the email.
-     */
-    public function sender()
+    protected $casts = [
+        'metadata' => 'array',
+        'sent_at' => 'datetime',
+    ];
+
+    public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
     }
 
-    /**
-     * Get the receiver associated with the email.
-     */
-    public function receiver()
+    public function thread(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'receiver_id');
+        return $this->belongsTo(EmailThread::class, 'thread_id');
     }
 
-    /**
-     * Get the status of the email.
-     */
-    public function status()
+    public function parent(): BelongsTo
     {
-        return $this->hasOne(Email_Status::class, 'email_id'); // The correct foreign key is 'email_id'
+        return $this->belongsTo(self::class, 'parent_email_id');
+    }
+
+    public function replies(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_email_id');
+    }
+
+    public function recipients(): HasMany
+    {
+        return $this->hasMany(EmailRecipient::class, 'email_id');
+    }
+
+    public function mailboxEntries(): HasMany
+    {
+        return $this->hasMany(EmailMailbox::class, 'email_id');
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(EmailAttachment::class, 'email_id');
+    }
+
+    public function scopeSent(Builder $query): Builder
+    {
+        return $query->where('status', 'sent');
+    }
+
+    public function scopeDraft(Builder $query): Builder
+    {
+        return $query->where('status', 'draft');
     }
 }
