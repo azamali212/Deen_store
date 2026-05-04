@@ -13,10 +13,14 @@
         "laravel/reverb": "^1.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
+        "spatie/laravel-activitylog": "^5.0",
         "spatie/laravel-permission": "^7.4"
     },
     "require-dev": {
+        "barryvdh/laravel-ide-helper": "^3.7",
+        "dedoc/scramble": "^0.13.22",
         "fakerphp/faker": "^1.23",
+        "larastan/larastan": "^3.9",
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
         "laravel/pint": "^1.27",
