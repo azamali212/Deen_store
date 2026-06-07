@@ -85,6 +85,7 @@ final class PermissionMap
         ];
     }
 
+    // This method generates the full list of permissions in the format "module.action" based on the modules and their associated actions defined in the modules() method. It ensures that all permissions are unique and returns them as a flat array.
     public static function permissions(): array
     {
         $permissions = [];
@@ -99,6 +100,7 @@ final class PermissionMap
         return array_values(array_unique($permissions));
     }
 
+    // The only method filters the full list of permissions to include only those that match any of the provided patterns. A pattern can be an exact permission name or a prefix followed by a wildcard (e.g., "catalog.*" to match all permissions starting with "catalog."). The except method does the opposite, excluding permissions that match the patterns. The exact method returns only the permissions that exactly match the provided list. The merge method combines multiple permission groups into a single array of unique permissions.
     public static function only(array $patterns): array
     {
         return array_values(array_filter(
@@ -107,10 +109,12 @@ final class PermissionMap
         ));
     }
 
+    // The except method filters the full list of permissions to exclude those that match any of the provided patterns.
     public static function except(array $patterns): array
     {
         return array_values(array_filter(
             self::permissions(),
+            //this is function use for filtering the permissions based on the patterns provided, they check bool ture and fasle and return the permissions that match the patterns, if the 
             static fn (string $permission): bool => ! self::matchesAny($permission, $patterns)
         ));
     }
