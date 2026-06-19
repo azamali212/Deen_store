@@ -1,0 +1,20 @@
+LoginContextResolver
+
+Login environment collect karna
+
+TokenAbilityBuilder
+
+Sanctum token abilities banana
+
+AuthResponseBuilder
+
+Standard API response banana
+
+LoginContextResolver es liya bnaya hia kl jb mai uk mai login kron ga tu ip uk wala ay ga like asy login ay ga data Edinburgh
+MacBook
+Chrome or jb phr mai pakistan ja k login kron ga tu Pakistan
+Android
+Firefox phr high risk ay ga otp required ho ge es liya ya file use hoi hai 
+
+
+TokenAbilityBuilder file bht important file hai ku k ya file token k through sb ko  access dy ge , es mai ya ho ga k kis user ko kon c access ho ge kon c permissions mily ge 

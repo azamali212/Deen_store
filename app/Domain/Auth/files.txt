@@ -1,0 +1,118 @@
+app/
+├── Domain/
+│   └── Auth/
+│       ├── DTO/
+│       │   ├── LoginDTO.php
+│       │   ├── RegisterCustomerDTO.php
+│       │   ├── RegisterSellerDTO.php
+│       │   ├── RegisterAdminDTO.php
+│       │   ├── VerifyOtpDTO.php
+│       │   └── LogoutDTO.php
+│       │
+│       ├── Enums/
+│       │   ├── AuthPanel.php
+│       │   ├── AuthStatus.php
+│       │   ├── LoginProvider.php
+│       │   ├── LoginRiskLevel.php
+│       │   ├── OtpPurpose.php
+│       │   └── UserAccountStatus.php
+│       │
+│       ├── Events/
+│       │   ├── UserLoggedIn.php
+│       │   ├── UserLoggedOut.php
+│       │   ├── LoginFailed.php
+│       │   ├── OtpSent.php
+│       │   ├── OtpVerified.php
+│       │   └── SuspiciousLoginDetected.php
+│       │
+│       ├── Exceptions/
+            |-- AuthException.php
+│       │   ├── AccountInactiveException.php
+│       │   ├── PanelAccessDeniedException.php
+│       │   ├── InvalidCredentialsException.php
+│       │   └── SuspiciousLoginException.php
+        |--In future
+          OtpExpiredException
+          OtpLimitExceededException
+          DeviceNotTrustedException
+          StepUpAuthenticationRequiredException
+          AdminApprovalRequiredException
+          SellerApprovalRequiredException
+│       │
+│       ├── Services/
+│       │   ├── AuthService.php
+│       │   ├── PanelAccessService.php
+│       │   ├── SessionService.php
+│       │   ├── OtpService.php
+│       │   ├── PasswordPolicyService.php
+│       │   ├── DeviceFingerprintService.php
+│       │   ├── SuspiciousLoginService.php
+│       │   └── AuthRiskScoringService.php
+│       │
+│       ├── Actions/
+│       │   ├── LoginUserAction.php
+│       │   ├── RegisterCustomerAction.php
+│       │   ├── RegisterSellerAction.php
+│       │   ├── RegisterAdminAction.php
+│       │   ├── LogoutUserAction.php
+│       │   └── VerifyOtpAction.php
+│       │
+│       ├── Repositories/
+        │
+        │   ├── Contracts/
+        │   │   └── AuthRepositoryInterface.php
+        │   │
+        │   ├── AuthRepository.php
+        │   │
+        │   ├── DTO/
+        │   │   ├── CreateUserData.php
+        │   │   ├── CreateOtpData.php
+        │   │   ├── CreateSessionData.php
+        │   │   ├── CreateLoginLogData.php
+        │   │   └── CreateTrustedDeviceData.php
+        │   │
+        │   └── Queries/
+        │       ├── UserQuery.php
+        │       ├── OtpQuery.php
+        │       ├── SessionQuery.php
+        │       ├── LoginLogQuery.php
+        │       └── TrustedDeviceQuery.php
+│       │
+│       ├── Support/
+│       │   ├── TokenAbilityBuilder.php
+│       │   ├── AuthResponseBuilder.php
+│       │   └── LoginContextResolver.php
+│       │
+│       └── AI/
+│           ├── AuthRiskPromptBuilder.php
+│           └── AuthRiskResult.php
+│
+└── Http/
+    ├── Controllers/
+    │   └── Auth/
+    │       ├── CustomerAuthController.php
+    │       ├── SellerAuthController.php
+    │       ├── AdminAuthController.php
+    │       └── SessionController.php
+    │
+    ├── Requests/
+    │   └── Auth/
+    │       ├── LoginRequest.php
+    │       ├── RegisterCustomerRequest.php
+    │       ├── RegisterSellerRequest.php
+    │       ├── RegisterAdminRequest.php
+    │       └── VerifyOtpRequest.php
+    │
+    ├── Resources/
+    │   └── Auth/
+    │       ├── AuthUserResource.php
+    │       ├── AuthTokenResource.php
+    │       └── SessionResource.php
+    │
+    └── Middleware/
+        ├── CheckUserStatus.php
+        ├── EnsurePanelAccess.php
+        ├── EnsureAdminPanelAccess.php
+        ├── EnsureSellerPanelAccess.php
+        ├── EnsureCustomerPanelAccess.php
+        └── RequireStepUpAuth.php
