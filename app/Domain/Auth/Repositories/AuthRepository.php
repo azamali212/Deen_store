@@ -125,4 +125,46 @@ final readonly class AuthRepository implements AuthRepositoryInterface
             ->activeForUser($userId)
             ->get();
     }
+
+    public function findValidOtp(
+        int|string $userId,
+        string $code,
+        string $purpose
+    ): ?LoginOtp
+    {
+        return LoginOtp::query()
+            ->where('user_id', $userId)
+            ->where('code', $code)
+            ->where('purpose', $purpose)
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now())
+            ->first();
+    }
+
+    public function invalidateOtps(
+        int|string $userId,
+        string $purpose
+    ): int
+    {
+        return LoginOtp::query()
+            ->where('user_id', $userId)
+            ->where('purpose', $purpose)
+            ->whereNull('verified_at')
+            ->update([
+                'expires_at' => now(),
+            ]);
+    }
+
+    public function countActiveOtps(
+        int|string $userId,
+        string $purpose
+    ): int
+    {
+        return LoginOtp::query()
+            ->where('user_id', $userId)
+            ->where('purpose', $purpose)
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now())
+            ->count();
+    }
 }

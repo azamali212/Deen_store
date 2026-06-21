@@ -45,4 +45,20 @@ interface AuthRepositoryInterface
     public function findTrustedDevice(int|string $userId, string $fingerprint): ?TrustedDevice;
 
     public function activeSessions(int|string $userId): Collection;
+
+    public function findValidOtp(
+        int|string $userId,
+        string $code,
+        string $purpose
+    ): ?LoginOtp;
+    
+    public function invalidateOtps(
+        int|string $userId,
+        string $purpose
+    ): int;
+    
+    public function countActiveOtps(
+        int|string $userId,
+        string $purpose
+    ): int;
 }

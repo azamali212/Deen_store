@@ -24,6 +24,38 @@ app/
 │       │   ├── OtpSent.php
 │       │   ├── OtpVerified.php
 │       │   └── SuspiciousLoginDetected.php
+├── Listeners/
+
+        │   ├── LogSuccessfulLoginListener.php
+
+        │   ├── LogFailedLoginListener.php
+
+        │   ├── SendOtpNotificationListener.php
+
+        │   ├── NotifySuspiciousLoginListener.php
+
+        │   └── RevokeSessionsAfterPasswordChangeListener.php
+        ├── Notifications/
+
+        │   ├── LoginOtpNotification.php
+
+        │   ├── SuspiciousLoginNotification.php
+
+        │   └── NewDeviceLoginNotification.php
+
+        │
+
+        ├── Policies/
+
+        │   └── AuthPolicy.php
+
+        │
+
+        └── Jobs/
+
+            ├── SendOtpJob.php
+
+            └── ProcessSuspiciousLoginJob.php
 │       │
 │       ├── Exceptions/
             |-- AuthException.php
@@ -116,3 +148,35 @@ app/
         ├── EnsureSellerPanelAccess.php
         ├── EnsureCustomerPanelAccess.php
         └── RequireStepUpAuth.php
+
+        In future 
+        login()
+logout()
+logoutAllDevices()
+
+verifyOtp()
+
+registerCustomer()
+registerSeller()
+registerAdmin()
+
+changePassword()
+forgotPassword()
+resetPassword()
+
+trustDevice()
+removeTrustedDevice()
+
+activeSessions()
+terminateSession()
+
+approveSeller()
+rejectSeller()
+
+approveAdmin()
+
+requireStepUp()
+verifyStepUp()
+
+switchPanel()
+switchStore()
