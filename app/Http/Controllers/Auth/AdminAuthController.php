@@ -13,13 +13,16 @@ use App\Domain\Auth\DTO\LogoutDTO;
 use App\Domain\Auth\DTO\RegisterAdminDTO;
 use App\Domain\Auth\DTO\VerifyOtpDTO;
 use App\Domain\Auth\Enums\AuthPanel;
+use App\Domain\Auth\Services\DeviceFingerprintService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\LogoutRequest;
 use App\Http\Requests\Auth\RegisterAdminRequest;
 use App\Http\Requests\Auth\VerifyOtpRequest;
 use App\Http\Resources\Auth\AuthResultResource;
+use App\Http\Resources\Auth\UserResource;
 use App\Models\User;
+use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -27,7 +30,7 @@ final class AdminAuthController extends Controller
 {
     public function login(LoginRequest $request, LoginUserAction $action): AuthResultResource
     {
-        $dto = LoginDTO::fromArray($request->validated(), AuthPanel::ADMIN);
+        $dto = LoginDTO::fromArray($request->validated(), AuthPanel::ADMIN, $request->ip(), $request->userAgent());
         return new AuthResultResource($action->execute($dto));
     }
 
@@ -35,26 +38,36 @@ final class AdminAuthController extends Controller
     {
         $dto = RegisterAdminDTO::fromArray($request->validated(), (string) $request->user()->id);
         $user = $action->execute($dto);
-
         return response()->json([
             'success' => true,
-            'message' => 'Admin created successfully.',
+            'message' => 'Admin account created successfully.',
             'data' => [
-                'id' => $user->id,
-                'email' => $user->email,
+                'user' => new UserResource($user),
             ],
-        ]);
+            'meta' => [
+                'request_id' => (string) Str::ulid(),
+                'timestamp' => now()->toISOString(),
+            ],
+        ], 201);
     }
 
-    public function verifyOtp(VerifyOtpRequest $request, VerifyOtpAction $action): JsonResponse
-    {
-        $dto = VerifyOtpDTO::fromArray($request->validated());
-        $user = User::query()->where('email',$dto->identifier)->firstOrFail();
+    public function verifyOtp(
+        VerifyOtpRequest $request,
+        VerifyOtpAction $action,
+    ): AuthResultResource {
 
-        return response()->json([
-            'success' => $action->execute($user, $dto->code, $dto->purpose),
+        $dto = VerifyOtpDTO::fromArray(
+            $request->validated(),
+            AuthPanel::ADMIN,
+            $request->ip(),
+            $request->userAgent(),
+            app(DeviceFingerprintService::class)
+                ->deviceName($request),
+        );
 
-        ]);
+        return new AuthResultResource(
+            $action->execute($dto)
+        );
     }
 
     public function logout(LogoutRequest $request, LogoutUserAction $action): JsonResponse

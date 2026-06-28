@@ -15,7 +15,7 @@ final class SuperAdminSeeder extends Seeder
 {
     public function run(): void
     {
-        $email = config('zimal.super_admin.email', 'admin@zimal.test');
+        $email = config('zimal.super_admin.email', 'azamalifsd73@gmail.com');
 
         $superAdmin = User::query()->updateOrCreate(
             ['email' => $email],

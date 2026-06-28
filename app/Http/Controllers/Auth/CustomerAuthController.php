@@ -13,6 +13,7 @@ use App\Domain\Auth\DTO\LogoutDTO;
 use App\Domain\Auth\DTO\RegisterCustomerDTO;
 use App\Domain\Auth\DTO\VerifyOtpDTO;
 use App\Domain\Auth\Enums\AuthPanel;
+use App\Domain\Auth\Services\DeviceFingerprintService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\LogoutRequest;
@@ -47,15 +48,23 @@ final class CustomerAuthController extends Controller
         ]);
     }
 
-    public function verifyOtp(VerifyOtpRequest $request, VerifyOtpAction $action): JsonResponse
-    {
-        $dto = VerifyOtpDTO::fromArray($request->validated());
+    public function verifyOtp(
+        VerifyOtpRequest $request,
+        VerifyOtpAction $action,
+    ): AuthResultResource {
 
-        $user = User::query()->where('email', $dto->identifier)->firstOrFail();
+        $dto = VerifyOtpDTO::fromArray(
+            $request->validated(),
+            AuthPanel::CUSTOMER,
+            $request->ip(),
+            $request->userAgent(),
+            app(DeviceFingerprintService::class)
+                ->deviceName($request),
+        );
 
-        return response()->json([
-            'success' => $action->execute($user, $dto->code, $dto->purpose),
-        ]);
+        return new AuthResultResource(
+            $action->execute($dto)
+        );
     }
 
     public function logout(LogoutRequest $request, LogoutUserAction $action): JsonResponse

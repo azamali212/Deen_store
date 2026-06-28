@@ -12,13 +12,13 @@ enum AuthPanel: string
     case ADMIN = 'admin';
 
     public function accessPermission(): string
-    {
-        return match ($this) {
-            self::CUSTOMER => 'customer_access',
-            self::SELLER => 'seller_access',
-            self::ADMIN => 'admin_access',
-        };
-    }
+{
+    return match ($this) {
+        self::CUSTOMER => 'panel.customer.access',
+        self::SELLER   => 'panel.seller.access',
+        self::ADMIN    => 'panel.admin.access',
+    };
+}
 
     public function tokenName(): string
 

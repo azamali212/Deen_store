@@ -4,22 +4,23 @@ declare(strict_types=1);
 
 namespace App\Domain\Auth\Actions;
 
-use App\Domain\Auth\DTO\AuthResult;
-use App\Domain\Auth\DTO\VerifyOtpDTO;
+use App\Domain\Auth\DTO\CreateUserDTO;
 use App\Domain\Auth\Services\AuthService;
+use App\Models\User;
 
-final readonly class VerifyOtpAction
+final readonly class CreateUserAction
 {
     public function __construct(
         private AuthService $authService,
     ) {}
 
     public function execute(
-        VerifyOtpDTO $dto,
-    ): AuthResult {
+        CreateUserDTO $dto
+    ): User {
 
-        return $this->authService->verifyOtp(
-            $dto
-        );
+        return $this->authService
+            ->createUser(
+                $dto
+            );
     }
 }

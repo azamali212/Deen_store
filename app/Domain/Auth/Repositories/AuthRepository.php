@@ -127,25 +127,32 @@ final readonly class AuthRepository implements AuthRepositoryInterface
     }
 
     public function findValidOtp(
+
         int|string $userId,
-        string $code,
+
         string $purpose
-    ): ?LoginOtp
-    {
+
+    ): ?LoginOtp {
+
         return LoginOtp::query()
+
             ->where('user_id', $userId)
-            ->where('code', $code)
+
             ->where('purpose', $purpose)
+
             ->whereNull('verified_at')
+
             ->where('expires_at', '>', now())
+
+            ->latest()
+
             ->first();
     }
 
     public function invalidateOtps(
         int|string $userId,
         string $purpose
-    ): int
-    {
+    ): int {
         return LoginOtp::query()
             ->where('user_id', $userId)
             ->where('purpose', $purpose)
@@ -158,8 +165,7 @@ final readonly class AuthRepository implements AuthRepositoryInterface
     public function countActiveOtps(
         int|string $userId,
         string $purpose
-    ): int
-    {
+    ): int {
         return LoginOtp::query()
             ->where('user_id', $userId)
             ->where('purpose', $purpose)

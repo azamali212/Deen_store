@@ -5,14 +5,21 @@ declare(strict_types=1);
 namespace App\Domain\Auth\Services;
 
 use App\Domain\Auth\DTO\AuthResult;
+use App\Domain\Auth\DTO\CreateUserDTO;
+use App\Domain\Auth\Enums\AuthPanel;
+use App\Domain\Auth\Enums\LoginProvider;
+use App\Domain\Permissions\Enums\SystemRole;
 use App\Domain\Auth\DTO\RegisterAdminDTO;
 use App\Domain\Auth\DTO\RegisterCustomerDTO;
 use App\Domain\Auth\DTO\RegisterSellerDTO;
 use App\Domain\Auth\DTO\LoginDTO;
 use App\Domain\Auth\DTO\LogoutDTO;
+use App\Domain\Auth\DTO\VerifyOtpDTO;
 use App\Domain\Auth\Enums\AuthStatus;
 use App\Domain\Auth\Enums\LoginRiskLevel;
 use App\Domain\Auth\Enums\OtpPurpose;
+use App\Domain\Auth\Events\Data\LoginEventData;
+use App\Domain\Auth\Events\UserLoggedIn;
 use App\Domain\Auth\Exceptions\AccountInactiveException;
 use App\Domain\Auth\Exceptions\InvalidCredentialsException;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
@@ -22,6 +29,7 @@ use App\Domain\Auth\Repositories\DTO\CreateUserData;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use App\Domain\Auth\Repositories\DTO\CreateTrustedDeviceData;
 
 final readonly class AuthService
 {
@@ -34,6 +42,7 @@ final readonly class AuthService
         private SuspiciousLoginService $suspiciousLoginService,
         private AuthRiskScoringService $riskScoringService,
     ) {}
+
 
     public function login(LoginDTO $dto): AuthResult
     {
@@ -74,16 +83,7 @@ final readonly class AuthService
                 $dto->panel
             );
 
-            $fingerprint = $this->deviceFingerprintService
-
-            ->generate(
-                $dto->ipAddress,
-                $dto->userAgent,
-                $dto->deviceName,
-                $dto->panel->value
-            );
-
-            $riskScore = $this->riskScoringService
+        $riskScore = $this->riskScoringService
             ->calculate(
                 user: $user,
                 trustedDevice: false,
@@ -92,76 +92,25 @@ final readonly class AuthService
                 failedAttempts: 0,
             );
 
-        if ($riskScore >= 70) {
+        $purpose = $dto->panel === AuthPanel::ADMIN
+            ? OtpPurpose::ADMIN_LOGIN
+            : OtpPurpose::LOGIN;
 
-            $this->otpService->create(
-                $user,
-                OtpPurpose::LOGIN
-            );
-
-            return new AuthResult(
-                user: $user,
-                token: '',
-                tokenName: '',
-                sessionId: null,
-                abilities: [],
-                accessiblePanels: [],
-                requiresOtp: true,
-                message: 'OTP verification required.'
-            );
-        }
-
-        $tokenName = $dto->panel->value.'-panel';
-
-        $token = $user
-            ->createToken(
-                $tokenName,
-                ['*']
-            );
-
-            $session = $this->sessionService->create(
-
-                new CreateSessionData(
-                    userId: (string) $user->id,
-                    tokenId: (string) $token->accessToken->id,
-                    panel: $dto->panel,
-                    ipAddress: $dto->ipAddress,
-                    userAgent: $dto->userAgent,
-                    deviceName: $dto->deviceName,
-                )
-            
-            );
-
-        $this->repository->updateUser(
+        $this->otpService->create(
             $user,
-            [
-                'last_login_at' => now(),
-                'last_login_ip' => $dto->ipAddress,
-            ]
-        );
-
-        $this->repository->createLoginLog(
-            new CreateLoginLogData(
-                status: AuthStatus::SUCCESS,
-                panel: $dto->panel,
-                provider: $dto->provider,
-                riskLevel: $this->riskScoringService->level($riskScore),
-                userId: (string) $user->id,
-                email: $user->email,
-                ipAddress: $dto->ipAddress,
-                userAgent: $dto->userAgent,
-                deviceName: $dto->deviceName,
-            )
+            $purpose
         );
 
         return new AuthResult(
             user: $user,
-            token: $token->plainTextToken,
-            tokenName: $tokenName,
-            sessionId: (string) $session->id,
-            abilities: ['*'],
-            accessiblePanels: $this->panelAccessService
-                ->accessiblePanels($user),
+            token: '',
+            tokenName: '',
+            sessionId: null,
+            abilities: [],
+            accessiblePanels: [],
+            requiresOtp: true,
+            requiresStepUp: $riskScore >= 70,
+            message: 'OTP has been sent to your email address.'
         );
     }
 
@@ -200,17 +149,125 @@ final readonly class AuthService
     }
 
     public function verifyOtp(
-        User $user,
-        string $code,
-        OtpPurpose $purpose
-    ): bool {
+        VerifyOtpDTO $dto
+    ): AuthResult {
 
-        return $this->otpService
+        $user = $this->repository
+            ->findUserByEmail(
+                $dto->identifier
+            );
+
+        if (! $user instanceof User) {
+            throw new InvalidCredentialsException();
+        }
+
+        $this->panelAccessService
+            ->ensureCanAccess(
+                $user,
+                $dto->panel
+            );
+
+        $verified = $this->otpService
             ->verify(
                 $user,
-                $code,
-                $purpose
+                $dto->code,
+                $dto->purpose
             );
+
+        if (! $verified) {
+            throw new \RuntimeException(
+                'Invalid or expired OTP.'
+            );
+        }
+
+        $deviceName = $dto->deviceName
+            ?? 'unknown-device';
+
+        $fingerprint = $this->deviceFingerprintService
+            ->generate(
+                ipAddress: $dto->ipAddress,
+                userAgent: $dto->userAgent,
+                deviceName: $deviceName,
+                panel: $dto->panel->value,
+            );
+        $tokenName = $dto->panel->value . '-panel';
+
+        $token = $user->createToken(
+            $tokenName,
+            ['*']
+        );
+
+        $session = $this->sessionService->create(
+            new CreateSessionData(
+                userId: (string) $user->id,
+                tokenId: (string) $token->accessToken->id,
+                panel: $dto->panel,
+                ipAddress: $dto->ipAddress,
+                userAgent: $dto->userAgent,
+                deviceName: $deviceName,
+            )
+        );
+        $this->repository->saveTrustedDevice(
+            new CreateTrustedDeviceData(
+                userId: (string) $user->id,
+                fingerprint: $fingerprint,
+                deviceName: $deviceName,
+                ipAddress: $dto->ipAddress,
+                userAgent: $dto->userAgent,
+                trustedUntil: now()->addDays(30),
+            )
+        );
+        $this->repository->updateUser(
+            $user,
+            [
+                'last_login_at' => now(),
+                'last_login_ip' => $dto->ipAddress,
+            ]
+        );
+
+        $this->repository->createLoginLog(
+
+            new CreateLoginLogData(
+                status: AuthStatus::SUCCESS,
+                panel: $dto->panel,
+                provider: $dto->provider,
+                riskLevel: LoginRiskLevel::LOW,
+                userId: (string) $user->id,
+                email: $user->email,
+                ipAddress: $dto->ipAddress,
+                userAgent: $dto->userAgent,
+                deviceName: $deviceName,
+            )
+        );
+        event(
+            new UserLoggedIn(
+                new LoginEventData(
+                    userId: (string) $user->id,
+                    email: $user->email,
+                    panel: $dto->panel,
+                    provider: $dto->provider,
+                    ipAddress: $dto->ipAddress ?? '',
+                    userAgent: $dto->userAgent,
+                    deviceName: $deviceName,
+                    browser: null,
+                    operatingSystem: null,
+                    riskScore: 0,
+                    occurredAt: now(),
+                )
+            )
+
+        );
+        return new AuthResult(
+            user: $user,
+            token: $token->plainTextToken,
+            tokenName: $tokenName,
+            sessionId: (string) $session->id,
+            abilities: ['*'],
+            accessiblePanels: $this->panelAccessService->accessiblePanels($user),
+            requiresOtp: false,
+            requiresStepUp: false,
+            message: 'Login successful.'
+        );
     }
 
     private function logFailedLogin(
@@ -236,31 +293,31 @@ final readonly class AuthService
     public function registerCustomer(
         RegisterCustomerDTO $dto
     ): User {
-    
+
         return DB::transaction(
             function () use ($dto): User {
-    
+
                 $user = $this->repository->createUser(
                     new CreateUserData(
                         name: $dto->name,
-                        email: $dto->email,                    
-                        passwordHash: Hash::make(                   
+                        email: $dto->email,
+                        passwordHash: Hash::make(
                             $dto->password
                         ),
                         phone: $dto->phone,
-                    
+
                     )
                 );
-    
+
                 $user->assignRole(
                     'customer'
                 );
-    
+
                 $this->repository->createLoginLog(
                     new CreateLoginLogData(
                         status: AuthStatus::SUCCESS,
-                        panel: \App\Domain\Auth\Enums\AuthPanel::CUSTOMER,
-                        provider: \App\Domain\Auth\Enums\LoginProvider::PASSWORD,
+                        panel: AuthPanel::CUSTOMER,
+                        provider: LoginProvider::PASSWORD,
                         riskLevel: LoginRiskLevel::LOW,
                         userId: (string) $user->id,
                         email: $user->email,
@@ -269,7 +326,7 @@ final readonly class AuthService
                         deviceName: 'registration',
                     )
                 );
-    
+
                 return $user;
             }
         );
@@ -278,10 +335,10 @@ final readonly class AuthService
     public function registerSeller(
         RegisterSellerDTO $dto
     ): User {
-    
+
         return DB::transaction(
             function () use ($dto): User {
-    
+
                 $user = $this->repository->createUser(
                     new CreateUserData(
                         name: $dto->name,
@@ -292,16 +349,16 @@ final readonly class AuthService
                         phone: $dto->phone,
                     )
                 );
-    
+
                 $user->assignRole(
                     'seller'
                 );
-    
+
                 $this->repository->createLoginLog(
                     new CreateLoginLogData(
                         status: AuthStatus::SUCCESS,
-                        panel: \App\Domain\Auth\Enums\AuthPanel::SELLER,
-                        provider: \App\Domain\Auth\Enums\LoginProvider::PASSWORD,
+                        panel: AuthPanel::SELLER,
+                        provider: LoginProvider::PASSWORD,
                         riskLevel: LoginRiskLevel::LOW,
                         userId: (string) $user->id,
                         email: $user->email,
@@ -315,7 +372,7 @@ final readonly class AuthService
                         ],
                     )
                 );
-    
+
                 return $user;
             }
         );
@@ -324,10 +381,10 @@ final readonly class AuthService
     public function registerAdmin(
         RegisterAdminDTO $dto
     ): User {
-    
+
         return DB::transaction(
             function () use ($dto): User {
-    
+
                 $user = $this->repository->createUser(
                     new CreateUserData(
                         name: $dto->name,
@@ -338,16 +395,16 @@ final readonly class AuthService
                         phone: $dto->phone,
                     )
                 );
-    
+
                 $user->assignRole(
                     $dto->role->value
                 );
-    
+
                 $this->repository->createLoginLog(
                     new CreateLoginLogData(
                         status: AuthStatus::SUCCESS,
-                        panel: \App\Domain\Auth\Enums\AuthPanel::ADMIN,
-                        provider: \App\Domain\Auth\Enums\LoginProvider::PASSWORD,
+                        panel: AuthPanel::ADMIN,
+                        provider: LoginProvider::PASSWORD,
                         riskLevel: LoginRiskLevel::LOW,
                         userId: (string) $user->id,
                         email: $user->email,
@@ -360,9 +417,66 @@ final readonly class AuthService
                         ],
                     )
                 );
-    
+
                 return $user;
             }
         );
+    }
+    public function createUser(
+        CreateUserDTO $dto
+    ): User {
+        return DB::transaction(
+            function () use ($dto): User {
+                $user = $this->repository->createUser(
+                    new CreateUserData(
+                        name: $dto->name,
+                        email: $dto->email,
+                        passwordHash: Hash::make(
+                            $dto->password
+                        ),
+                        phone: $dto->phone,
+                    )
+                );
+                $user->assignRole(
+                    $dto->role->value
+                );
+                $this->repository->createLoginLog(
+                    new CreateLoginLogData(
+                        status: AuthStatus::SUCCESS,
+                        panel: $this->resolvePanel(
+                            $dto->role
+                        ),
+                        provider: LoginProvider::PASSWORD,
+                        riskLevel: LoginRiskLevel::LOW,
+                        userId: (string) $user->id,
+                        email: $user->email,
+                        ipAddress: $dto->ipAddress,
+                        userAgent: $dto->userAgent,
+                        deviceName: 'user-created',
+                        metadata: [
+                            'created_by' => $dto->createdByUserId,
+                            'role' => $dto->role->value,
+                        ],
+                    )
+                );
+                return $user;
+            }
+        );
+    }
+    private function resolvePanel(
+        SystemRole $role
+    ): AuthPanel {
+        return match ($role) {
+            SystemRole::CUSTOMER
+            => AuthPanel::CUSTOMER,
+
+            SystemRole::SELLER,
+            SystemRole::SELLER_MANAGER,
+            SystemRole::SELLER_STAFF
+            => AuthPanel::SELLER,
+
+            default
+            => AuthPanel::ADMIN,
+        };
     }
 }

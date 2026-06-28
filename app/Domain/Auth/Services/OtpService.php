@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Domain\Auth\Services;
 
 use App\Domain\Auth\Enums\OtpPurpose;
+use App\Domain\Auth\Events\Data\OtpEventData;
+use App\Domain\Auth\Events\OtpSent;
+use App\Domain\Auth\Notifications\LoginOtpNotification;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
 use App\Domain\Auth\Repositories\DTO\CreateOtpData;
 use App\Models\LoginOtp;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Hash;
 
 final readonly class OtpService
 {
@@ -38,26 +42,67 @@ final readonly class OtpService
         OtpPurpose $purpose
     ): LoginOtp {
 
+        if (! $this->canRequestOtp(
+            $user,
+            $purpose
+        )) {
+
+            throw new \RuntimeException(
+                'OTP request limit exceeded.'
+            );
+        }
+
         $this->invalidateActiveOtps(
             $user,
             $purpose
         );
 
-        return $this->repository->createOtp(
+        $plainOtp = $this->generateOtp();
+
+        $otp = $this->repository->createOtp(
+
             new CreateOtpData(
 
                 identifier: $user->email,
 
-                codeHash: bcrypt($this->generateOtp()),
+                codeHash: Hash::make(
+                    $plainOtp
+                ),
 
                 purpose: $purpose,
 
-                expiresAt: now()->addMinutes(self::OTP_EXPIRY_MINUTES),
+                expiresAt: now()->addMinutes(
+                    self::OTP_EXPIRY_MINUTES
+                ),
 
                 userId: (string) $user->id,
 
             )
+
         );
+        $user->notify(
+            new LoginOtpNotification(
+                otp: $plainOtp,
+                purpose: $purpose->value,
+                identifier: $user->email,
+            )
+        );
+        event(
+            new OtpSent(
+                new OtpEventData(
+                    userId: (string) $user->id,
+                    identifier: $user->email,
+                    code: $plainOtp,
+                    purpose: $purpose,
+                    ipAddress: request()->ip(),
+                    userAgent: request()->userAgent(),
+                    occurredAt: now(),
+                )
+            )
+
+        );
+
+        return $otp;
     }
 
     public function verify(
@@ -69,11 +114,21 @@ final readonly class OtpService
         $otp = $this->repository
             ->findValidOtp(
                 userId: $user->id,
-                code: $code,
                 purpose: $purpose->value,
             );
 
-        if (! $otp) {
+        if (! $otp instanceof LoginOtp) {
+            return false;
+        }
+
+        if ($this->isExpired($otp)) {
+            return false;
+        }
+
+        if (! Hash::check(
+            $code,
+            $otp->code
+        )) {
             return false;
         }
 
@@ -91,8 +146,11 @@ final readonly class OtpService
 
         $this->repository
             ->invalidateOtps(
+
                 $user->id,
+
                 $purpose->value
+
             );
     }
 
@@ -112,8 +170,11 @@ final readonly class OtpService
 
         return $this->repository
             ->countActiveOtps(
+
                 $user->id,
+
                 $purpose->value
+
             ) < self::MAX_ACTIVE_OTPS;
     }
 }
