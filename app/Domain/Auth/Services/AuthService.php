@@ -8,10 +8,8 @@ use App\Domain\Auth\DTO\AuthResult;
 use App\Domain\Auth\DTO\CreateUserDTO;
 use App\Domain\Auth\Enums\AuthPanel;
 use App\Domain\Auth\Enums\LoginProvider;
+use App\Domain\Auth\Events\UserCreated;
 use App\Domain\Permissions\Enums\SystemRole;
-use App\Domain\Auth\DTO\RegisterAdminDTO;
-use App\Domain\Auth\DTO\RegisterCustomerDTO;
-use App\Domain\Auth\DTO\RegisterSellerDTO;
 use App\Domain\Auth\DTO\LoginDTO;
 use App\Domain\Auth\DTO\LogoutDTO;
 use App\Domain\Auth\DTO\VerifyOtpDTO;
@@ -290,138 +288,6 @@ final readonly class AuthService
         );
     }
 
-    public function registerCustomer(
-        RegisterCustomerDTO $dto
-    ): User {
-
-        return DB::transaction(
-            function () use ($dto): User {
-
-                $user = $this->repository->createUser(
-                    new CreateUserData(
-                        name: $dto->name,
-                        email: $dto->email,
-                        passwordHash: Hash::make(
-                            $dto->password
-                        ),
-                        phone: $dto->phone,
-
-                    )
-                );
-
-                $user->assignRole(
-                    'customer'
-                );
-
-                $this->repository->createLoginLog(
-                    new CreateLoginLogData(
-                        status: AuthStatus::SUCCESS,
-                        panel: AuthPanel::CUSTOMER,
-                        provider: LoginProvider::PASSWORD,
-                        riskLevel: LoginRiskLevel::LOW,
-                        userId: (string) $user->id,
-                        email: $user->email,
-                        ipAddress: $dto->ipAddress,
-                        userAgent: $dto->userAgent,
-                        deviceName: 'registration',
-                    )
-                );
-
-                return $user;
-            }
-        );
-    }
-
-    public function registerSeller(
-        RegisterSellerDTO $dto
-    ): User {
-
-        return DB::transaction(
-            function () use ($dto): User {
-
-                $user = $this->repository->createUser(
-                    new CreateUserData(
-                        name: $dto->name,
-                        email: $dto->email,
-                        passwordHash: Hash::make(
-                            $dto->password
-                        ),
-                        phone: $dto->phone,
-                    )
-                );
-
-                $user->assignRole(
-                    'seller'
-                );
-
-                $this->repository->createLoginLog(
-                    new CreateLoginLogData(
-                        status: AuthStatus::SUCCESS,
-                        panel: AuthPanel::SELLER,
-                        provider: LoginProvider::PASSWORD,
-                        riskLevel: LoginRiskLevel::LOW,
-                        userId: (string) $user->id,
-                        email: $user->email,
-                        ipAddress: $dto->ipAddress,
-                        userAgent: $dto->userAgent,
-                        deviceName: $dto->storeName,
-                        metadata: [
-                            'store_name' => $dto->storeName,
-                            'business_name' => $dto->businessName,
-                            'business_type' => $dto->businessType,
-                        ],
-                    )
-                );
-
-                return $user;
-            }
-        );
-    }
-
-    public function registerAdmin(
-        RegisterAdminDTO $dto
-    ): User {
-
-        return DB::transaction(
-            function () use ($dto): User {
-
-                $user = $this->repository->createUser(
-                    new CreateUserData(
-                        name: $dto->name,
-                        email: $dto->email,
-                        passwordHash: Hash::make(
-                            $dto->password
-                        ),
-                        phone: $dto->phone,
-                    )
-                );
-
-                $user->assignRole(
-                    $dto->role->value
-                );
-
-                $this->repository->createLoginLog(
-                    new CreateLoginLogData(
-                        status: AuthStatus::SUCCESS,
-                        panel: AuthPanel::ADMIN,
-                        provider: LoginProvider::PASSWORD,
-                        riskLevel: LoginRiskLevel::LOW,
-                        userId: (string) $user->id,
-                        email: $user->email,
-                        ipAddress: $dto->ipAddress,
-                        userAgent: $dto->userAgent,
-                        deviceName: 'admin-registration',
-                        metadata: [
-                            'created_by' => $dto->createdByUserId,
-                            'role' => $dto->role->value,
-                        ],
-                    )
-                );
-
-                return $user;
-            }
-        );
-    }
     public function createUser(
         CreateUserDTO $dto
     ): User {
@@ -459,6 +325,13 @@ final readonly class AuthService
                         ],
                     )
                 );
+                event(
+                    new UserCreated(
+                        user: $user,
+                        createdBy: $dto->createdByUserId,
+                    )
+                );
+                //dd('UserCreated Event Fired');
                 return $user;
             }
         );

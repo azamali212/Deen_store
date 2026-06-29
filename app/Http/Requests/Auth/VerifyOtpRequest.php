@@ -16,47 +16,22 @@ final class VerifyOtpRequest extends FormRequest
     public function rules(): array
     {
         return [
-
             'identifier' => [
-
                 'required',
-
                 'email',
-
             ],
-
             'code' => [
-
                 'required',
-
                 'digits:6',
-
             ],
-
-            'purpose' => [
-
-                'required',
-
-                'string',
-
-            ],
-
             'ip_address' => [
-
                 'nullable',
-
                 'string',
-
             ],
-
             'user_agent' => [
-
                 'nullable',
-
                 'string',
-
             ],
-
         ];
     }
 }

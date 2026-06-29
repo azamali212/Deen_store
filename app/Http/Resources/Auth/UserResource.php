@@ -10,24 +10,38 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class UserResource extends JsonResource
 {
     /**
-     * Transform the resource into an array.
-     *
-     * @return array<string, mixed>
+     * @return array<string,mixed>
      */
-    public function toArray(Request $request): array
-    {
+    public function toArray(
+        Request $request
+    ): array {
+
         return [
+
             'id' => $this->id,
+
             'uuid' => $this->uuid,
+
             'name' => $this->name,
+
             'email' => $this->email,
+
             'phone' => $this->phone,
+
             'status' => $this->status,
+
             'roles' => $this->getRoleNames()->values(),
-            'email_verified' => $this->hasVerifiedEmail(),
+
+            'permissions' => $this->getPermissionNames()->values(),
+
+            'email_verified_at' => $this->email_verified_at,
+
             'last_login_at' => $this->last_login_at,
+
             'created_at' => $this->created_at,
+
             'updated_at' => $this->updated_at,
+
         ];
     }
 }

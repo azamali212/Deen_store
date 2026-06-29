@@ -46,21 +46,10 @@ interface AuthRepositoryInterface
 
     public function activeSessions(int|string $userId): Collection;
 
-    public function findValidOtp(
+    public function findValidOtp(int|string $userId,string $purpose): ?LoginOtp;
+    
+    public function invalidateOtps(int|string $userId,string $purpose): int;
+    
+    public function countActiveOtps(int|string $userId,string $purpose): int;
 
-        int|string $userId,
-    
-        string $purpose
-    
-    ): ?LoginOtp;
-    
-    public function invalidateOtps(
-        int|string $userId,
-        string $purpose
-    ): int;
-    
-    public function countActiveOtps(
-        int|string $userId,
-        string $purpose
-    ): int;
 }

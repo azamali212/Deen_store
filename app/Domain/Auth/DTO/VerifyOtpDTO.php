@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Auth\DTO;
 
 use App\Domain\Auth\Enums\AuthPanel;
-use App\Domain\Auth\Enums\OtpPurpose;
 use App\Domain\Auth\Enums\LoginProvider;
+use App\Domain\Auth\Enums\OtpPurpose;
 
 final readonly class VerifyOtpDTO
 {
@@ -15,10 +15,10 @@ final readonly class VerifyOtpDTO
         public string $code,
         public OtpPurpose $purpose,
         public AuthPanel $panel,
-        public ?string $ipAddress = null,
-        public ?string $userAgent = null,
-        public ?string $deviceName = null,
         public LoginProvider $provider,
+        public ?string $ipAddress,
+        public ?string $userAgent,
+        public ?string $deviceName,
     ) {}
 
     public static function fromArray(
@@ -30,48 +30,30 @@ final readonly class VerifyOtpDTO
     ): self {
 
         return new self(
-            identifier: self::cleanIdentifier(
-                $data['identifier']
-            ),
-            provider: isset($data['provider'])
-    ? LoginProvider::from(
-        (string) $data['provider']
-    )
-    : LoginProvider::PASSWORD,
+            identifier: strtolower(trim((string) $data['identifier'])),
 
-            code: self::cleanString(
-                $data['code']
-            ),
+            code: trim((string) $data['code']),
 
-            purpose: OtpPurpose::from(
-                (string) $data['purpose']
-            ),
+            purpose: match ($panel) {
+
+                AuthPanel::ADMIN
+                    => OtpPurpose::ADMIN_LOGIN,
+
+                AuthPanel::CUSTOMER,
+                AuthPanel::SELLER
+                    => OtpPurpose::LOGIN,
+
+            },
 
             panel: $panel,
+
+            provider: LoginProvider::PASSWORD,
 
             ipAddress: $ipAddress,
 
             userAgent: $userAgent,
 
             deviceName: $deviceName,
-        );
-    }
-
-    private static function cleanIdentifier(
-        mixed $identifier
-    ): string {
-
-        return strtolower(
-            trim((string) $identifier)
-        );
-    }
-
-    private static function cleanString(
-        mixed $value
-    ): string {
-
-        return trim(
-            (string) $value
         );
     }
 }

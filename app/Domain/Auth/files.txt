@@ -180,3 +180,20 @@ verifyStepUp()
 
 switchPanel()
 switchStore()
+
+Meri recommendation
+
+Is project ko is order mein complete karo:
+
+1. ✅ Current Login/OTP (almost complete)
+2. Email Verification
+3. Forgot Password
+4. Reset Password
+5. Change Password
+6. Customer Self Registration
+7. Seller Registration Request + Admin Approval
+8. Session Management
+9. Security Dashboard
+10. OAuth (Google, Apple, Facebook)
+11. MFA (Authenticator App + Backup Codes)
+12. Authorization Policies (Products, Orders, Stores, etc.)

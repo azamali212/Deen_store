@@ -7,7 +7,7 @@ namespace App\Http\Requests\Auth;
 use App\Domain\Permissions\Enums\SystemRole;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Password;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
 
 final class CreateUserRequest extends FormRequest
