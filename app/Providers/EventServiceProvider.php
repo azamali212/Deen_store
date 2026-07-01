@@ -15,6 +15,11 @@ use App\Domain\Auth\Listeners\NotifySuspiciousLoginListener;
 use App\Domain\Auth\Listeners\SendOtpNotificationListener;
 use App\Domain\Auth\Listeners\SendWelcomeEmailListener;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
+use App\Domain\Auth\Events\EmailVerificationRequested;
+use App\Domain\Auth\Events\EmailVerified;
+use App\Domain\Auth\Listeners\SendVerificationEmailListener;
+use App\Domain\Auth\Listeners\MarkEmailVerifiedListener;
+use App\Domain\Auth\Listeners\RequestEmailVerificationListener;
 
 final class EventServiceProvider extends ServiceProvider
 {
@@ -37,9 +42,17 @@ final class EventServiceProvider extends ServiceProvider
         ],
 
         UserCreated::class => [
-            SendWelcomeEmailListener::class
+            SendWelcomeEmailListener::class,
+            RequestEmailVerificationListener::class,
         ],
 
+        EmailVerificationRequested::class => [
+            SendVerificationEmailListener::class,
+        ],
+    
+        EmailVerified::class => [
+            MarkEmailVerifiedListener::class,
+        ],
     ];
 
     public function boot(): void

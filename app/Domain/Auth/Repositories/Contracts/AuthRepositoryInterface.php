@@ -15,6 +15,9 @@ use App\Models\LoginOtp;
 use App\Models\TrustedDevice;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use App\Domain\Auth\Repositories\DTO\CreateEmailVerificationData;
+
+use App\Models\EmailVerification;
 
 interface AuthRepositoryInterface
 {
@@ -46,10 +49,19 @@ interface AuthRepositoryInterface
 
     public function activeSessions(int|string $userId): Collection;
 
-    public function findValidOtp(int|string $userId,string $purpose): ?LoginOtp;
-    
-    public function invalidateOtps(int|string $userId,string $purpose): int;
-    
-    public function countActiveOtps(int|string $userId,string $purpose): int;
+    public function findValidOtp(int|string $userId, string $purpose): ?LoginOtp;
 
+    public function invalidateOtps(int|string $userId, string $purpose): int;
+
+    public function countActiveOtps(int|string $userId, string $purpose): int;
+
+    public function createEmailVerification(CreateEmailVerificationData $data): EmailVerification;
+
+    public function findEmailVerification(string $token): ?EmailVerification;
+
+    public function markEmailVerified(EmailVerification $verification): bool;
+
+    public function deleteExpiredEmailVerifications(): int;
+
+    public function deleteUserEmailVerifications(int|string $userId): int;
 }

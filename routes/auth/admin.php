@@ -14,6 +14,12 @@ Route::prefix('v1/admin/auth')
         Route::post('/verify-otp', [AdminAuthController::class, 'verifyOtp'])
             ->name('verify-otp');
 
+        Route::post('/verify-email', [AdminAuthController::class, 'verifyEmail'])
+            ->name('verify-email');
+
+        Route::post('/resend-verification', [AdminAuthController::class, 'resendVerification'])
+            ->name('resend-verification');
+
         Route::middleware([
             'auth:sanctum',
             'active',

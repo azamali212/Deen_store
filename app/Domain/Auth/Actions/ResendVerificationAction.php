@@ -4,22 +4,21 @@ declare(strict_types=1);
 
 namespace App\Domain\Auth\Actions;
 
-use App\Domain\Auth\DTO\VerifyEmailDTO;
+use App\Domain\Auth\DTO\ResendVerificationDTO;
 use App\Domain\Auth\Services\EmailVerificationService;
-use App\Models\User;
 
-final readonly class VerifyEmailAction
+final readonly class ResendVerificationAction
 {
     public function __construct(
         private EmailVerificationService $service,
     ) {}
 
     public function execute(
-        VerifyEmailDTO $dto,
-    ): User {
-        return $this->service
-            ->verify(
-                $dto
-            );
+        ResendVerificationDTO $dto,
+    ): void {
+
+        $this->service->resend(
+            $dto
+        );
     }
 }

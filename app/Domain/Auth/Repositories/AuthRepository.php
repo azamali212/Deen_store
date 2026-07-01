@@ -21,6 +21,10 @@ use App\Models\LoginOtp;
 use App\Models\TrustedDevice;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use App\Domain\Auth\Repositories\DTO\CreateEmailVerificationData;
+use App\Domain\Auth\Repositories\Queries\EmailVerificationQuery;
+use App\Domain\Auth\Repositories\Queries\LoginLogQuery;
+use App\Models\EmailVerification;
 
 final readonly class AuthRepository implements AuthRepositoryInterface
 {
@@ -29,6 +33,8 @@ final readonly class AuthRepository implements AuthRepositoryInterface
         private OtpQuery $otps,
         private SessionQuery $sessions,
         private TrustedDeviceQuery $trustedDevices,
+        private LoginLogQuery $loginLogs,
+        private EmailVerificationQuery $emailVerifications,
     ) {}
 
     public function findUserByEmail(string $email): ?User
@@ -126,51 +132,56 @@ final readonly class AuthRepository implements AuthRepositoryInterface
             ->get();
     }
 
-    public function findValidOtp(
-
-        int|string $userId,
-
-        string $purpose
-
-    ): ?LoginOtp {
-
-        return LoginOtp::query()
-
-            ->where('user_id', $userId)
-
-            ->where('purpose', $purpose)
-
-            ->whereNull('verified_at')
-
-            ->where('expires_at', '>', now())
-
-            ->latest()
-
+    public function findValidOtp(int|string $userId, string $purpose): ?LoginOtp
+    {
+        return $this->otps
+            ->valid($userId, $purpose)
             ->first();
     }
 
-    public function invalidateOtps(
-        int|string $userId,
-        string $purpose
-    ): int {
-        return LoginOtp::query()
-            ->where('user_id', $userId)
-            ->where('purpose', $purpose)
-            ->whereNull('verified_at')
+    public function invalidateOtps(int|string $userId, string $purpose): int
+    {
+        return $this->otps
+            ->activeForPurpose($userId, $purpose)
             ->update([
                 'expires_at' => now(),
             ]);
     }
 
-    public function countActiveOtps(
-        int|string $userId,
-        string $purpose
-    ): int {
-        return LoginOtp::query()
-            ->where('user_id', $userId)
-            ->where('purpose', $purpose)
-            ->whereNull('verified_at')
-            ->where('expires_at', '>', now())
+    public function countActiveOtps(int|string $userId, string $purpose): int
+    {
+        return $this->otps
+            ->active($userId, $purpose)
             ->count();
+    }
+
+    public function createEmailVerification(CreateEmailVerificationData $data): EmailVerification
+    {
+        return EmailVerification::query()->create($data->toArray());
+    }
+
+    public function findEmailVerification(string $token): ?EmailVerification
+    {
+        return $this->emailVerifications
+            ->byToken($token)
+            ->first();
+    }
+
+    public function markEmailVerified(EmailVerification $verification): bool
+    {
+        return $verification->update(['verified_at' => now()]);
+    }
+
+    public function deleteExpiredEmailVerifications(): int
+    {
+        return $this->emailVerifications
+            ->expired()
+            ->delete();
+    }
+    public function deleteUserEmailVerifications(int|string $userId): int 
+    {
+        return $this->emailVerifications
+            ->active($userId)
+            ->delete();
     }
 }

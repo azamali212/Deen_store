@@ -34,6 +34,39 @@ final class OtpQuery
             ->latest();
     }
 
+    public function valid(
+        int|string $userId,
+        string $purpose
+    ): Builder {
+        return LoginOtp::query()
+            ->where('user_id', $userId)
+            ->where('purpose', $purpose)
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now())
+            ->latest();
+    }
+
+    public function active(
+        int|string $userId,
+        string $purpose
+    ): Builder {
+        return LoginOtp::query()
+            ->where('user_id', $userId)
+            ->where('purpose', $purpose)
+            ->whereNull('verified_at')
+            ->where('expires_at', '>', now());
+    }
+
+    public function activeForPurpose(
+        int|string $userId,
+        string $purpose
+    ): Builder {
+        return LoginOtp::query()
+            ->where('user_id', $userId)
+            ->where('purpose', $purpose)
+            ->whereNull('verified_at');
+    }
+
     public function expired(): Builder
     {
         return LoginOtp::query()

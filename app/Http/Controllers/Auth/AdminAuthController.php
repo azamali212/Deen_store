@@ -23,6 +23,14 @@ use App\Http\Resources\Auth\AuthResultResource;
 use App\Http\Resources\Auth\UserResource;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
+use App\Domain\Auth\Actions\VerifyEmailAction;
+use App\Domain\Auth\DTO\VerifyEmailDTO;
+use App\Http\Requests\Auth\VerifyEmailRequest;
+use App\Http\Resources\Auth\VerifyEmailResource;
+use App\Domain\Auth\Actions\ResendVerificationAction;
+use App\Domain\Auth\DTO\ResendVerificationDTO;
+use App\Http\Requests\Auth\ResendVerificationRequest;
+use App\Http\Resources\Auth\ResendVerificationResource;
 
 final class AdminAuthController extends Controller
 {
@@ -88,5 +96,32 @@ final class AdminAuthController extends Controller
             'success' => true,
             'message' => 'Logged out successfully.',
         ]);
+    }
+
+    public function verifyEmail(
+        VerifyEmailRequest $request,
+        VerifyEmailAction $action,
+    ): VerifyEmailResource {
+
+        $dto = VerifyEmailDTO::fromArray(
+            $request->validated()
+        );
+
+        return new VerifyEmailResource(
+            $action->execute($dto)
+        );
+    }
+
+    public function resendVerification(ResendVerificationRequest $request, ResendVerificationAction $action,): ResendVerificationResource
+    {
+        $dto = ResendVerificationDTO::fromArray(
+            $request->validated()
+        );
+        $action->execute(
+            $dto
+        );
+        return new ResendVerificationResource(
+            null
+        );
     }
 }
