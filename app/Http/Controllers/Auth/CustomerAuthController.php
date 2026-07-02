@@ -67,4 +67,6 @@ final class CustomerAuthController extends Controller
             'message' => 'Logged out successfully.',
         ]);
     }
+
+    
 }

@@ -20,6 +20,12 @@ Route::prefix('v1/admin/auth')
         Route::post('/resend-verification', [AdminAuthController::class, 'resendVerification'])
             ->name('resend-verification');
 
+        Route::post('/forgot-password', [AdminAuthController::class, 'forgotPassword'])
+            ->name('forgot-password');
+
+        Route::post('/reset-password', [AdminAuthController::class, 'resetPassword'])
+            ->name('reset-password');
+
         Route::middleware([
             'auth:sanctum',
             'active',
@@ -34,5 +40,17 @@ Route::prefix('v1/admin/auth')
 
             Route::post('/logout', [AdminAuthController::class, 'logout'])
                 ->name('logout');
+
+            Route::post('/change-password', [AdminAuthController::class, 'changePassword'])
+                ->name('change-password');
+
+            Route::get('/sessions', [AdminAuthController::class, 'sessions'])
+                ->name('sessions');
+
+            Route::post('/sessions/logout', [AdminAuthController::class, 'logoutSession'])
+                ->name('sessions.logout');
+
+            Route::post('/sessions/logout-others', [AdminAuthController::class, 'logoutOtherSessions'])
+                ->name('sessions.logout-others');
         });
     });

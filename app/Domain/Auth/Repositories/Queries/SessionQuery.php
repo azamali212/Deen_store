@@ -34,4 +34,24 @@ final class SessionQuery
         return ActiveSession::query()
             ->where('token_id', $tokenId);
     }
+
+    public function otherActiveSessions(int|string $userId,string $currentTokenId,): Builder 
+    {
+        return ActiveSession::query()
+
+            ->where(
+                'user_id',
+                $userId
+            )
+
+            ->whereNull(
+                'terminated_at'
+            )
+
+            ->where(
+                'token_id',
+                '!=',
+                $currentTokenId
+            );
+    }
 }

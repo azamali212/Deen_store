@@ -24,7 +24,10 @@ use Illuminate\Database\Eloquent\Collection;
 use App\Domain\Auth\Repositories\DTO\CreateEmailVerificationData;
 use App\Domain\Auth\Repositories\Queries\EmailVerificationQuery;
 use App\Domain\Auth\Repositories\Queries\LoginLogQuery;
+use App\Domain\Auth\Repositories\Queries\PasswordResetQuery;
 use App\Models\EmailVerification;
+use App\Models\PasswordReset;
+use App\Domain\Auth\Repositories\DTO\CreatePasswordResetData;
 
 final readonly class AuthRepository implements AuthRepositoryInterface
 {
@@ -35,6 +38,7 @@ final readonly class AuthRepository implements AuthRepositoryInterface
         private TrustedDeviceQuery $trustedDevices,
         private LoginLogQuery $loginLogs,
         private EmailVerificationQuery $emailVerifications,
+        private PasswordResetQuery $passwordResets,
     ) {}
 
     public function findUserByEmail(string $email): ?User
@@ -178,10 +182,67 @@ final readonly class AuthRepository implements AuthRepositoryInterface
             ->expired()
             ->delete();
     }
-    public function deleteUserEmailVerifications(int|string $userId): int 
+    public function deleteUserEmailVerifications(int|string $userId): int
     {
         return $this->emailVerifications
             ->active($userId)
             ->delete();
+    }
+
+    public function createPasswordReset(CreatePasswordResetData $data): PasswordReset
+    {
+        return PasswordReset::query()
+            ->create(
+                $data->toArray()
+            );
+    }
+
+    public function findPasswordReset(string $token): ?PasswordReset
+    {
+        return $this->passwordResets
+            ->byToken($token)
+            ->first();
+    }
+
+    public function deleteUserPasswordResets(int|string $userId): int
+    {
+        return $this->passwordResets
+            ->active($userId)
+            ->delete();
+    }
+
+    public function markPasswordResetUsed(PasswordReset $passwordReset): bool
+    {
+        return $passwordReset->update([
+            'used_at' => now(),
+        ]);
+    }
+
+    public function deleteExpiredPasswordResets(): int
+    {
+        return $this->passwordResets
+            ->expired()
+            ->delete();
+    }
+
+    public function findSessionByToken(string $tokenId,): ?ActiveSession
+    {
+        return $this->sessions
+            ->byTokenId(
+                $tokenId
+            )
+            ->first();
+    }
+
+    public function terminateOtherSessions(int|string $userId, string $currentTokenId,): int
+    {
+        return $this->sessions
+            ->otherActiveSessions(
+                $userId,
+                $currentTokenId
+            )
+            ->update([
+                'terminated_at' => now(),
+            ]);
     }
 }

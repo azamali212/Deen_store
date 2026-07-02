@@ -20,6 +20,14 @@ use App\Domain\Auth\Events\EmailVerified;
 use App\Domain\Auth\Listeners\SendVerificationEmailListener;
 use App\Domain\Auth\Listeners\MarkEmailVerifiedListener;
 use App\Domain\Auth\Listeners\RequestEmailVerificationListener;
+use App\Domain\Auth\Events\PasswordResetRequested;
+use App\Domain\Auth\Events\PasswordResetCompleted;
+use App\Domain\Auth\Listeners\SendPasswordResetEmailListener;
+use App\Domain\Auth\Listeners\MarkPasswordResetCompletedListener;
+use App\Domain\Auth\Events\PasswordChanged;
+use App\Domain\Auth\Listeners\SendPasswordChangedNotificationListener;
+use App\Domain\Auth\Events\SessionTerminated;
+use App\Domain\Auth\Listeners\LogSessionTerminatedListener;
 
 final class EventServiceProvider extends ServiceProvider
 {
@@ -52,6 +60,22 @@ final class EventServiceProvider extends ServiceProvider
     
         EmailVerified::class => [
             MarkEmailVerifiedListener::class,
+        ],
+
+        PasswordResetRequested::class => [
+            SendPasswordResetEmailListener::class,
+        ],
+        
+        PasswordResetCompleted::class => [
+            MarkPasswordResetCompletedListener::class,
+        ],
+
+        PasswordChanged::class => [
+            SendPasswordChangedNotificationListener::class,
+        ],
+
+        SessionTerminated::class => [
+            LogSessionTerminatedListener::class,
         ],
     ];
 

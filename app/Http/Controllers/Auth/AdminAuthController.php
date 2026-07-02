@@ -31,6 +31,26 @@ use App\Domain\Auth\Actions\ResendVerificationAction;
 use App\Domain\Auth\DTO\ResendVerificationDTO;
 use App\Http\Requests\Auth\ResendVerificationRequest;
 use App\Http\Resources\Auth\ResendVerificationResource;
+use App\Domain\Auth\Actions\ForgotPasswordAction;
+use App\Domain\Auth\Actions\ResetPasswordAction;
+use App\Domain\Auth\DTO\ForgotPasswordDTO;
+use App\Domain\Auth\DTO\ResetPasswordDTO;
+use App\Http\Requests\Auth\ForgotPasswordRequest;
+use App\Http\Requests\Auth\ResetPasswordRequest;
+use App\Http\Resources\Auth\ForgotPasswordResource;
+use App\Http\Resources\Auth\ResetPasswordResource;
+use App\Domain\Auth\Actions\ChangePasswordAction;
+use App\Domain\Auth\DTO\ChangePasswordDTO;
+use App\Http\Requests\Auth\ChangePasswordRequest;
+use App\Http\Resources\Auth\ChangePasswordResource;
+use App\Domain\Auth\Actions\ListSessionsAction;
+use App\Domain\Auth\Actions\LogoutSessionAction;
+use App\Domain\Auth\Actions\LogoutOtherSessionsAction;
+use App\Domain\Auth\DTO\LogoutSessionDTO;
+use App\Domain\Auth\DTO\LogoutOtherSessionsDTO;
+use App\Http\Requests\Auth\LogoutSessionRequest;
+use App\Http\Resources\Auth\ActiveSessionCollection;
+use Illuminate\Support\Facades\Request;
 
 final class AdminAuthController extends Controller
 {
@@ -123,5 +143,92 @@ final class AdminAuthController extends Controller
         return new ResendVerificationResource(
             null
         );
+    }
+
+    public function forgotPassword(ForgotPasswordRequest $request, ForgotPasswordAction $action,): ForgotPasswordResource
+    {
+        $dto = ForgotPasswordDTO::fromArray(
+            $request->validated(),
+            $request->ip(),
+            $request->userAgent(),
+        );
+
+        $action->execute(
+            $dto
+        );
+
+        return new ForgotPasswordResource(
+            null
+        );
+    }
+
+    public function resetPassword(ResetPasswordRequest $request, ResetPasswordAction $action,): ResetPasswordResource
+    {
+        $dto = ResetPasswordDTO::fromArray(
+            $request->validated(),
+            $request->ip(),
+            $request->userAgent(),
+        );
+
+        $action->execute(
+            $dto
+        );
+
+        return new ResetPasswordResource(
+            null
+        );
+    }
+
+    public function changePassword(ChangePasswordRequest $request, ChangePasswordAction $action,): ChangePasswordResource
+    {
+        $dto = ChangePasswordDTO::fromArray(
+            $request->validated(),
+            (string) $request->user()->id,
+        );
+        $action->execute(
+            $dto
+        );
+        return new ChangePasswordResource(
+            null
+        );
+    }
+
+    public function sessions(\Illuminate\Http\Request $request, ListSessionsAction $action,): ActiveSessionCollection
+    {
+        return new ActiveSessionCollection(
+            $action->execute(
+                (string) $request->user()->id
+            )
+        );
+    }
+
+    public function logoutSession(LogoutSessionRequest $request, LogoutSessionAction $action,): JsonResponse
+    {
+        $dto = LogoutSessionDTO::fromArray(
+            $request->validated(),
+            (string) $request->user()->id,
+        );
+        $action->execute(
+            $dto
+        );
+        return response()->json([
+            'success' => true,
+            'message' => 'Session terminated successfully.',
+        ]);
+    }
+
+    public function logoutOtherSessions(LogoutOtherSessionsAction $action,\Illuminate\Http\Request $request): JsonResponse
+    {
+        $dto = LogoutOtherSessionsDTO::fromUser(
+            (string) $request->user()->id,
+            (string) $request->user()->currentAccessToken()->id,
+        );
+        $action->execute(
+            $dto
+        );
+        return response()->json([
+            'success' => true,
+            'message' => 'Other sessions terminated successfully.',
+        ]);
     }
 }

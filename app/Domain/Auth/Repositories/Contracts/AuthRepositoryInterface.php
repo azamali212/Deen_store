@@ -16,6 +16,8 @@ use App\Models\TrustedDevice;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use App\Domain\Auth\Repositories\DTO\CreateEmailVerificationData;
+use App\Domain\Auth\Repositories\DTO\CreatePasswordResetData;
+use App\Models\PasswordReset;
 
 use App\Models\EmailVerification;
 
@@ -64,4 +66,18 @@ interface AuthRepositoryInterface
     public function deleteExpiredEmailVerifications(): int;
 
     public function deleteUserEmailVerifications(int|string $userId): int;
+
+    public function createPasswordReset(CreatePasswordResetData $data): PasswordReset;
+
+    public function findPasswordReset(string $token): ?PasswordReset;
+
+    public function deleteUserPasswordResets(int|string $userId): int;
+
+    public function markPasswordResetUsed(PasswordReset $passwordReset): bool;
+
+    public function deleteExpiredPasswordResets(): int;
+
+    public function findSessionByToken(string $tokenId,): ?ActiveSession;
+    
+    public function terminateOtherSessions(int|string $userId,string $currentTokenId,): int;
 }

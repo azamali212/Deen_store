@@ -9,6 +9,11 @@ use App\Domain\Auth\Repositories\DTO\CreateSessionData;
 use App\Models\ActiveSession;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use App\Domain\Auth\DTO\LogoutOtherSessionsDTO;
+use App\Domain\Auth\DTO\LogoutSessionDTO;
+use App\Domain\Auth\Events\SessionTerminated;
+
+use RuntimeException;
 
 final readonly class SessionService
 {
@@ -65,5 +70,52 @@ final readonly class SessionService
     ): bool {
         return $this->activeSessions($user)
             ->isNotEmpty();
+    }
+
+    public function logoutSession(
+        LogoutSessionDTO $dto,
+    ): void {
+        $session = $this->repository
+            ->findSessionByToken(
+                $dto->tokenId
+            );
+        if (! $session) {
+            throw new RuntimeException(
+                'Session not found.'
+            );
+        }
+        if ((string) $session->user_id !== $dto->userId) {
+            throw new RuntimeException(
+                'Unauthorized session.'
+            );
+        }
+        $this->repository
+            ->terminateSession(
+                $dto->tokenId
+            );
+        event(
+            new SessionTerminated(
+                $session->fresh()
+            )
+        );
+    }
+
+    public function sessions(
+        string $userId,
+    ): Collection {
+        return $this->repository
+            ->activeSessions(
+                $userId
+            );
+    }
+
+    public function logoutOtherSessions(
+        LogoutOtherSessionsDTO $dto,
+    ): void {
+        $this->repository
+            ->terminateOtherSessions(
+                $dto->userId,
+                $dto->currentTokenId
+            );
     }
 }
