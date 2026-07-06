@@ -30,6 +30,8 @@ final readonly class EnsureTrustedDevice
             userAgent: $request->userAgent(),
             deviceName: $this->fingerprintService->deviceName($request),
             panel: $panel,
+
+            
         );
 
         $device = $this->repository->findTrustedDevice(
@@ -37,7 +39,6 @@ final readonly class EnsureTrustedDevice
             $fingerprint
         );
 
-       
 
         if ($device === null || ! $device->isTrusted()) {
             abort(403, 'This device is not trusted.');

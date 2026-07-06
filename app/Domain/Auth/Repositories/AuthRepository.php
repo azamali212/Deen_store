@@ -245,4 +245,14 @@ final readonly class AuthRepository implements AuthRepositoryInterface
                 'terminated_at' => now(),
             ]);
     }
+
+    public function trustedDevices(int|string $userId,): Collection 
+    {
+        return $this->trustedDevices->forUser($userId)->get();
+    }
+
+    public function revokeTrustedDevice(TrustedDevice $device,): bool 
+    {
+        return (bool) $device->delete();
+    }
 }

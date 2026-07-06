@@ -52,5 +52,11 @@ Route::prefix('v1/admin/auth')
 
             Route::post('/sessions/logout-others', [AdminAuthController::class, 'logoutOtherSessions'])
                 ->name('sessions.logout-others');
+
+            Route::get('/trusted-devices', [AdminAuthController::class, 'trustedDevices'])
+                ->name('trusted-devices');
+
+            Route::delete('/trusted-devices', [AdminAuthController::class, 'revokeTrustedDevice'])
+                ->name('trusted-devices.revoke');
         });
     });

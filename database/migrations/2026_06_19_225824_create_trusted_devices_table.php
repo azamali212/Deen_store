@@ -36,6 +36,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['user_id', 'fingerprint']);
+            
 
             $table->index('trusted_until');
 

@@ -51,6 +51,12 @@ use App\Domain\Auth\DTO\LogoutOtherSessionsDTO;
 use App\Http\Requests\Auth\LogoutSessionRequest;
 use App\Http\Resources\Auth\ActiveSessionCollection;
 use Illuminate\Support\Facades\Request;
+use App\Domain\Auth\Actions\ListTrustedDevicesAction;
+use App\Domain\Auth\Actions\RevokeTrustedDeviceAction;
+use App\Domain\Auth\DTO\RevokeTrustedDeviceDTO;
+use App\Http\Requests\Auth\RevokeTrustedDeviceRequest;
+use App\Http\Resources\Auth\TrustedDeviceCollection;
+use App\Http\Resources\Auth\RevokeTrustedDeviceResource;
 
 final class AdminAuthController extends Controller
 {
@@ -230,5 +236,28 @@ final class AdminAuthController extends Controller
             'success' => true,
             'message' => 'Other sessions terminated successfully.',
         ]);
+    }
+
+    public function trustedDevices(\Illuminate\Http\Request $request,ListTrustedDevicesAction $action,): TrustedDeviceCollection 
+    {
+        return new TrustedDeviceCollection(
+            $action->execute(
+                (string) $request->user()->id
+            )
+        );
+    }
+
+    public function revokeTrustedDevice(RevokeTrustedDeviceRequest $request,RevokeTrustedDeviceAction $action,): RevokeTrustedDeviceResource 
+    {
+        $dto = RevokeTrustedDeviceDTO::fromArray(
+            $request->validated(),
+            (string) $request->user()->id,
+        );
+        $action->execute(
+            $dto
+        );
+        return new RevokeTrustedDeviceResource(
+            null
+        );
     }
 }

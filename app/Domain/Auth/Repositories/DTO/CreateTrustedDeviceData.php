@@ -12,6 +12,8 @@ final readonly class CreateTrustedDeviceData
         public string $userId,
         public string $fingerprint,
         public ?string $deviceName = null,
+        public ?string $browser = null,
+        public ?string $operatingSystem = null,
         public ?string $ipAddress = null,
         public ?string $userAgent = null,
         public ?CarbonInterface $trustedUntil = null,
@@ -26,7 +28,9 @@ final readonly class CreateTrustedDeviceData
             'ip_address' => $this->ipAddress,
             'user_agent' => $this->userAgent,
             'trusted_until' => $this->trustedUntil,
+            'browser' => $this->browser,
+            'operating_system' => $this->operatingSystem,
             'last_used_at' => now(),
-        ], static fn ($value): bool => $value !== null);
+        ], static fn($value): bool => $value !== null);
     }
 }

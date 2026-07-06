@@ -80,4 +80,8 @@ interface AuthRepositoryInterface
     public function findSessionByToken(string $tokenId,): ?ActiveSession;
     
     public function terminateOtherSessions(int|string $userId,string $currentTokenId,): int;
+
+    public function trustedDevices(int|string $userId,): Collection;
+    
+    public function revokeTrustedDevice(TrustedDevice $device,): bool;
 }

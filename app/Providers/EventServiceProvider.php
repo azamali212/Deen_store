@@ -28,6 +28,8 @@ use App\Domain\Auth\Events\PasswordChanged;
 use App\Domain\Auth\Listeners\SendPasswordChangedNotificationListener;
 use App\Domain\Auth\Events\SessionTerminated;
 use App\Domain\Auth\Listeners\LogSessionTerminatedListener;
+use App\Domain\Auth\Events\TrustedDeviceRevoked;
+use App\Domain\Auth\Listeners\LogTrustedDeviceRevokedListener;
 
 final class EventServiceProvider extends ServiceProvider
 {
@@ -76,6 +78,10 @@ final class EventServiceProvider extends ServiceProvider
 
         SessionTerminated::class => [
             LogSessionTerminatedListener::class,
+        ],
+
+        TrustedDeviceRevoked::class => [
+            LogTrustedDeviceRevokedListener::class,
         ],
     ];
 
