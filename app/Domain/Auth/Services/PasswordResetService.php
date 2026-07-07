@@ -14,16 +14,30 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use App\Domain\Auth\DTO\LoginRateLimitDTO;
+use App\Domain\Auth\Enums\AuthPanel;
 
 final readonly class PasswordResetService
 {
     public function __construct(
         private AuthRepositoryInterface $repository,
+        private LoginRateLimitService $loginRateLimitService,
     ) {}
 
     public function request(
         ForgotPasswordDTO $dto
     ): void {
+
+        $rateLimit = LoginRateLimitDTO::make(
+            email: $dto->email,
+            panel: AuthPanel::ADMIN,
+            ipAddress: $dto->ipAddress,
+        );
+
+        $this->loginRateLimitService
+            ->ensureIsNotLimited(
+                $rateLimit
+            );
 
         $user = $this->repository
             ->findUserByEmail(
@@ -31,6 +45,10 @@ final readonly class PasswordResetService
             );
 
         if (! $user instanceof User) {
+            $this->loginRateLimitService
+                ->hit(
+                    $rateLimit
+                );
             return;
         }
 
@@ -68,6 +86,11 @@ final readonly class PasswordResetService
                 token: $token,
             )
         );
+
+        $this->loginRateLimitService
+            ->clear(
+                $rateLimit
+            );
     }
 
     public function reset(

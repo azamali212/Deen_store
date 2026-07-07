@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use App\Domain\Auth\Exceptions\TooManyLoginAttemptsException;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -29,6 +31,18 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn(Request $request) => $request->is('api/*'),
+            fn (Request $request) => $request->is('api/*'),
+        );
+        $exceptions->render(
+            function (
+                TooManyLoginAttemptsException $e,
+                //Request $request,
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'retry_after' => $e->secondsUntilAvailable,
+                ], Response::HTTP_TOO_MANY_REQUESTS);
+            }
         );
     })->create();

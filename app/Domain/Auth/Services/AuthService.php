@@ -28,6 +28,9 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use App\Domain\Auth\Repositories\DTO\CreateTrustedDeviceData;
+use App\Domain\Auth\Services\LoginRateLimitService;
+use App\Domain\Auth\DTO\LoginRateLimitDTO;
+use RuntimeException;
 
 final readonly class AuthService
 {
@@ -39,22 +42,35 @@ final readonly class AuthService
         private DeviceFingerprintService $deviceFingerprintService,
         private SuspiciousLoginService $suspiciousLoginService,
         private AuthRiskScoringService $riskScoringService,
+        private LoginRateLimitService $loginRateLimitService,
     ) {}
 
 
     public function login(LoginDTO $dto): AuthResult
     {
+        $rateLimit = LoginRateLimitDTO::make(
+            email: $dto->email,
+            panel: $dto->panel,
+            ipAddress: $dto->ipAddress,
+        );
+
+        $this->loginRateLimitService
+            ->ensureIsNotLimited(
+                $rateLimit
+            );
         $user = $this->repository->findUserByEmail(
             $dto->email
         );
 
         if (! $user instanceof User) {
-
+            $this->loginRateLimitService
+                ->hit(
+                    $rateLimit
+                );
             $this->logFailedLogin(
                 $dto,
                 'User not found'
             );
-
             throw new InvalidCredentialsException();
         }
 
@@ -62,7 +78,10 @@ final readonly class AuthService
             $dto->password,
             $user->password
         )) {
-
+            $this->loginRateLimitService
+                ->hit(
+                    $rateLimit
+                );
             $this->logFailedLogin(
                 $dto,
                 'Invalid password'
@@ -98,6 +117,11 @@ final readonly class AuthService
             $user,
             $purpose
         );
+
+        $this->loginRateLimitService
+            ->clear(
+                $rateLimit
+            );
 
         return new AuthResult(
             user: $user,
@@ -150,12 +174,27 @@ final readonly class AuthService
         VerifyOtpDTO $dto
     ): AuthResult {
 
+        $rateLimit = LoginRateLimitDTO::make(
+            email: $dto->identifier,
+            panel: $dto->panel,
+            ipAddress: $dto->ipAddress,
+        );
+
+        $this->loginRateLimitService
+            ->ensureIsNotLimited(
+                $rateLimit
+            );
+
         $user = $this->repository
             ->findUserByEmail(
                 $dto->identifier
             );
 
         if (! $user instanceof User) {
+            $this->loginRateLimitService
+                ->hit(
+                    $rateLimit
+                );
             throw new InvalidCredentialsException();
         }
 
@@ -173,10 +212,19 @@ final readonly class AuthService
             );
 
         if (! $verified) {
-            throw new \RuntimeException(
+            $this->loginRateLimitService
+                ->hit(
+                    $rateLimit
+                );
+            throw new RuntimeException(
                 'Invalid or expired OTP.'
             );
         }
+
+        $this->loginRateLimitService
+            ->clear(
+                $rateLimit
+            );
 
         $deviceName = $dto->deviceName
             ?? 'unknown-device';
