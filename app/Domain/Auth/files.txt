@@ -197,3 +197,75 @@ Is project ko is order mein complete karo:
 10. OAuth (Google, Apple, Facebook)
 11. MFA (Authenticator App + Backup Codes)
 12. Authorization Policies (Products, Orders, Stores, etc.)
+
+
+├── 🔜 Account Lockout
+
+Domain
+└── Auth
+    ├── DTO
+    │   └── UnlockAccountDTO.php
+    │
+    ├── Actions
+    │   └── UnlockAccountAction.php
+    │
+    ├── Services
+    │   └── AccountLockoutService.php
+    │
+    ├── Exceptions
+    │   └── AccountLockedException.php
+    │
+    ├── Events
+    │   ├── AccountLocked.php
+    │   └── AccountUnlocked.php
+    │
+    ├── Listeners
+    │   ├── LogAccountLockedListener.php
+    │   ├── LogAccountUnlockedListener.php
+    │   ├── SendAccountLockedNotificationListener.php
+    │   └── SendAccountUnlockedNotificationListener.php
+    │
+    └── Notifications
+        ├── AccountLockedNotification.php
+        └── AccountUnlockedNotification.php
+
+Http
+├── Requests
+│   └── Auth
+│       └── UnlockAccountRequest.php
+│
+├── Resources
+│   └── Auth
+│       └── UnlockAccountResource.php
+│
+└── Controllers
+    └── Auth
+        └── AdminAuthController.php
+
+config
+└── auth_security.php
+
+database
+└── migration
+    └── add_account_lockout_fields_to_users_table.php
+
+app
+└── Models
+    └── User.php
+
+app
+└── Providers
+    └── EventServiceProvider.php
+
+bootstrap
+└── app.php
+
+├── 🔜 Audit Logs
+
+├── 🔜 Password History
+
+├── 🔜 Two-Factor Authentication (2FA)
+
+├── 🔜 Social Login
+
+└── 🔜 AI Security

@@ -30,7 +30,7 @@ Route::prefix('v1/admin/auth')
             'auth:sanctum',
             'active',
             'trusted:admin',
-            //'otp',
+            // 'otp',
             'panel:admin',
             'role:super_admin',
         ])->group(function (): void {
@@ -58,5 +58,8 @@ Route::prefix('v1/admin/auth')
 
             Route::delete('/trusted-devices', [AdminAuthController::class, 'revokeTrustedDevice'])
                 ->name('trusted-devices.revoke');
+
+            Route::post('/unlock-account', [AdminAuthController::class, 'unlockAccount'])
+                ->name('unlock-account');
         });
     });

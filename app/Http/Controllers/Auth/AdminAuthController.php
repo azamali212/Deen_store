@@ -16,6 +16,7 @@ use App\Domain\Auth\Actions\LogoutUserAction;
 use App\Domain\Auth\Actions\ResendVerificationAction;
 use App\Domain\Auth\Actions\ResetPasswordAction;
 use App\Domain\Auth\Actions\RevokeTrustedDeviceAction;
+use App\Domain\Auth\Actions\UnlockAccountAction;
 use App\Domain\Auth\Actions\VerifyEmailAction;
 use App\Domain\Auth\Actions\VerifyOtpAction;
 use App\Domain\Auth\DTO\ChangePasswordDTO;
@@ -28,6 +29,7 @@ use App\Domain\Auth\DTO\LogoutSessionDTO;
 use App\Domain\Auth\DTO\ResendVerificationDTO;
 use App\Domain\Auth\DTO\ResetPasswordDTO;
 use App\Domain\Auth\DTO\RevokeTrustedDeviceDTO;
+use App\Domain\Auth\DTO\UnlockAccountDTO;
 use App\Domain\Auth\DTO\VerifyEmailDTO;
 use App\Domain\Auth\DTO\VerifyOtpDTO;
 use App\Domain\Auth\Enums\AuthPanel;
@@ -42,6 +44,7 @@ use App\Http\Requests\Auth\LogoutSessionRequest;
 use App\Http\Requests\Auth\ResendVerificationRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Requests\Auth\RevokeTrustedDeviceRequest;
+use App\Http\Requests\Auth\UnlockAccountRequest;
 use App\Http\Requests\Auth\VerifyEmailRequest;
 use App\Http\Requests\Auth\VerifyOtpRequest;
 use App\Http\Resources\Auth\ActiveSessionCollection;
@@ -52,6 +55,7 @@ use App\Http\Resources\Auth\ResendVerificationResource;
 use App\Http\Resources\Auth\ResetPasswordResource;
 use App\Http\Resources\Auth\RevokeTrustedDeviceResource;
 use App\Http\Resources\Auth\TrustedDeviceCollection;
+use App\Http\Resources\Auth\UnlockAccountResource;
 use App\Http\Resources\Auth\UserResource;
 use App\Http\Resources\Auth\VerifyEmailResource;
 use Illuminate\Http\JsonResponse;
@@ -265,6 +269,18 @@ final class AdminAuthController extends Controller
 
         return new RevokeTrustedDeviceResource(
             null,
+        );
+    }
+
+    public function unlockAccount(UnlockAccountRequest $request, UnlockAccountAction $action): UnlockAccountResource
+    {
+        $dto = UnlockAccountDTO::fromArray(
+            $request->validated(),
+            (string) $request->user()->id,
+        );
+
+        return new UnlockAccountResource(
+            $action->execute($dto),
         );
     }
 }

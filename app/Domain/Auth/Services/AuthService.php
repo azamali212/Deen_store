@@ -6,30 +6,29 @@ namespace App\Domain\Auth\Services;
 
 use App\Domain\Auth\DTO\AuthResult;
 use App\Domain\Auth\DTO\CreateUserDTO;
-use App\Domain\Auth\Enums\AuthPanel;
-use App\Domain\Auth\Enums\LoginProvider;
-use App\Domain\Auth\Events\UserCreated;
-use App\Domain\Permissions\Enums\SystemRole;
 use App\Domain\Auth\DTO\LoginDTO;
+use App\Domain\Auth\DTO\LoginRateLimitDTO;
 use App\Domain\Auth\DTO\LogoutDTO;
 use App\Domain\Auth\DTO\VerifyOtpDTO;
+use App\Domain\Auth\Enums\AuthPanel;
 use App\Domain\Auth\Enums\AuthStatus;
+use App\Domain\Auth\Enums\LoginProvider;
 use App\Domain\Auth\Enums\LoginRiskLevel;
 use App\Domain\Auth\Enums\OtpPurpose;
 use App\Domain\Auth\Events\Data\LoginEventData;
+use App\Domain\Auth\Events\UserCreated;
 use App\Domain\Auth\Events\UserLoggedIn;
 use App\Domain\Auth\Exceptions\AccountInactiveException;
 use App\Domain\Auth\Exceptions\InvalidCredentialsException;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
 use App\Domain\Auth\Repositories\DTO\CreateLoginLogData;
 use App\Domain\Auth\Repositories\DTO\CreateSessionData;
+use App\Domain\Auth\Repositories\DTO\CreateTrustedDeviceData;
 use App\Domain\Auth\Repositories\DTO\CreateUserData;
+use App\Domain\Permissions\Enums\SystemRole;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use App\Domain\Auth\Repositories\DTO\CreateTrustedDeviceData;
-use App\Domain\Auth\Services\LoginRateLimitService;
-use App\Domain\Auth\DTO\LoginRateLimitDTO;
 use RuntimeException;
 
 final readonly class AuthService
@@ -43,8 +42,8 @@ final readonly class AuthService
         private SuspiciousLoginService $suspiciousLoginService,
         private AuthRiskScoringService $riskScoringService,
         private LoginRateLimitService $loginRateLimitService,
+        private AccountLockoutService $accountLockoutService,
     ) {}
-
 
     public function login(LoginDTO $dto): AuthResult
     {
@@ -56,48 +55,63 @@ final readonly class AuthService
 
         $this->loginRateLimitService
             ->ensureIsNotLimited(
-                $rateLimit
+                $rateLimit,
             );
         $user = $this->repository->findUserByEmail(
-            $dto->email
+            $dto->email,
         );
 
         if (! $user instanceof User) {
             $this->loginRateLimitService
                 ->hit(
-                    $rateLimit
+                    $rateLimit,
                 );
             $this->logFailedLogin(
                 $dto,
-                'User not found'
+                'User not found',
             );
-            throw new InvalidCredentialsException();
+
+            throw new InvalidCredentialsException;
         }
+
+        $this->accountLockoutService
+            ->ensureNotLocked(
+                $user,
+            );
 
         if (! Hash::check(
             $dto->password,
-            $user->password
+            $user->password,
         )) {
             $this->loginRateLimitService
                 ->hit(
-                    $rateLimit
+                    $rateLimit,
+                );
+            $this->accountLockoutService
+                ->recordFailedAttempt(
+                    $user,
                 );
             $this->logFailedLogin(
                 $dto,
-                'Invalid password'
+                'Invalid password',
             );
 
-            throw new InvalidCredentialsException();
+            throw new InvalidCredentialsException;
         }
 
+        $this->accountLockoutService
+            ->resetFailedAttempts(
+                $user,
+            );
+
         if (! $user->isActive()) {
-            throw new AccountInactiveException();
+            throw new AccountInactiveException;
         }
 
         $this->panelAccessService
             ->ensureCanAccess(
                 $user,
-                $dto->panel
+                $dto->panel,
             );
 
         $riskScore = $this->riskScoringService
@@ -115,12 +129,12 @@ final readonly class AuthService
 
         $this->otpService->create(
             $user,
-            $purpose
+            $purpose,
         );
 
         $this->loginRateLimitService
             ->clear(
-                $rateLimit
+                $rateLimit,
             );
 
         return new AuthResult(
@@ -132,13 +146,13 @@ final readonly class AuthService
             accessiblePanels: [],
             requiresOtp: true,
             requiresStepUp: $riskScore >= 70,
-            message: 'OTP has been sent to your email address.'
+            message: 'OTP has been sent to your email address.',
         );
     }
 
     public function logout(
         User $user,
-        LogoutDTO $dto
+        LogoutDTO $dto,
     ): void {
 
         if ($dto->logoutAllDevices) {
@@ -152,18 +166,18 @@ final readonly class AuthService
 
             $this->repository
                 ->terminateSession(
-                    $dto->tokenId
+                    $dto->tokenId,
                 );
         }
     }
 
     public function logoutAllDevices(
-        User $user
+        User $user,
     ): void {
 
         $this->repository
             ->terminateAllSessions(
-                $user->id
+                $user->id,
             );
 
         $user->tokens()
@@ -171,7 +185,7 @@ final readonly class AuthService
     }
 
     public function verifyOtp(
-        VerifyOtpDTO $dto
+        VerifyOtpDTO $dto,
     ): AuthResult {
 
         $rateLimit = LoginRateLimitDTO::make(
@@ -182,48 +196,50 @@ final readonly class AuthService
 
         $this->loginRateLimitService
             ->ensureIsNotLimited(
-                $rateLimit
+                $rateLimit,
             );
 
         $user = $this->repository
             ->findUserByEmail(
-                $dto->identifier
+                $dto->identifier,
             );
 
         if (! $user instanceof User) {
             $this->loginRateLimitService
                 ->hit(
-                    $rateLimit
+                    $rateLimit,
                 );
-            throw new InvalidCredentialsException();
+
+            throw new InvalidCredentialsException;
         }
 
         $this->panelAccessService
             ->ensureCanAccess(
                 $user,
-                $dto->panel
+                $dto->panel,
             );
 
         $verified = $this->otpService
             ->verify(
                 $user,
                 $dto->code,
-                $dto->purpose
+                $dto->purpose,
             );
 
         if (! $verified) {
             $this->loginRateLimitService
                 ->hit(
-                    $rateLimit
+                    $rateLimit,
                 );
+
             throw new RuntimeException(
-                'Invalid or expired OTP.'
+                'Invalid or expired OTP.',
             );
         }
 
         $this->loginRateLimitService
             ->clear(
-                $rateLimit
+                $rateLimit,
             );
 
         $deviceName = $dto->deviceName
@@ -236,11 +252,11 @@ final readonly class AuthService
                 deviceName: $deviceName,
                 panel: $dto->panel->value,
             );
-        $tokenName = $dto->panel->value . '-panel';
+        $tokenName = $dto->panel->value.'-panel';
 
         $token = $user->createToken(
             $tokenName,
-            ['*']
+            ['*'],
         );
 
         $session = $this->sessionService->create(
@@ -251,7 +267,7 @@ final readonly class AuthService
                 ipAddress: $dto->ipAddress,
                 userAgent: $dto->userAgent,
                 deviceName: $deviceName,
-            )
+            ),
         );
         $this->repository->saveTrustedDevice(
             new CreateTrustedDeviceData(
@@ -261,14 +277,14 @@ final readonly class AuthService
                 ipAddress: $dto->ipAddress,
                 userAgent: $dto->userAgent,
                 trustedUntil: now()->addDays(30),
-            )
+            ),
         );
         $this->repository->updateUser(
             $user,
             [
                 'last_login_at' => now(),
                 'last_login_ip' => $dto->ipAddress,
-            ]
+            ],
         );
 
         $this->repository->createLoginLog(
@@ -283,7 +299,7 @@ final readonly class AuthService
                 ipAddress: $dto->ipAddress,
                 userAgent: $dto->userAgent,
                 deviceName: $deviceName,
-            )
+            ),
         );
         event(
             new UserLoggedIn(
@@ -299,10 +315,11 @@ final readonly class AuthService
                     operatingSystem: null,
                     riskScore: 0,
                     occurredAt: now(),
-                )
-            )
+                ),
+            ),
 
         );
+
         return new AuthResult(
             user: $user,
             token: $token->plainTextToken,
@@ -312,13 +329,13 @@ final readonly class AuthService
             accessiblePanels: $this->panelAccessService->accessiblePanels($user),
             requiresOtp: false,
             requiresStepUp: false,
-            message: 'Login successful.'
+            message: 'Login successful.',
         );
     }
 
     private function logFailedLogin(
         LoginDTO $dto,
-        string $reason
+        string $reason,
     ): void {
 
         $this->repository->createLoginLog(
@@ -332,12 +349,12 @@ final readonly class AuthService
                 userAgent: $dto->userAgent,
                 deviceName: $dto->deviceName,
                 failureReason: $reason,
-            )
+            ),
         );
     }
 
     public function createUser(
-        CreateUserDTO $dto
+        CreateUserDTO $dto,
     ): User {
         return DB::transaction(
             function () use ($dto): User {
@@ -346,19 +363,19 @@ final readonly class AuthService
                         name: $dto->name,
                         email: $dto->email,
                         passwordHash: Hash::make(
-                            $dto->password
+                            $dto->password,
                         ),
                         phone: $dto->phone,
-                    )
+                    ),
                 );
                 $user->assignRole(
-                    $dto->role->value
+                    $dto->role->value,
                 );
                 $this->repository->createLoginLog(
                     new CreateLoginLogData(
                         status: AuthStatus::SUCCESS,
                         panel: $this->resolvePanel(
-                            $dto->role
+                            $dto->role,
                         ),
                         provider: LoginProvider::PASSWORD,
                         riskLevel: LoginRiskLevel::LOW,
@@ -371,33 +388,32 @@ final readonly class AuthService
                             'created_by' => $dto->createdByUserId,
                             'role' => $dto->role->value,
                         ],
-                    )
+                    ),
                 );
                 event(
                     new UserCreated(
                         user: $user,
                         createdBy: $dto->createdByUserId,
-                    )
+                    ),
                 );
-                //dd('UserCreated Event Fired');
+
+                // dd('UserCreated Event Fired');
                 return $user;
-            }
+            },
         );
     }
+
     private function resolvePanel(
-        SystemRole $role
+        SystemRole $role,
     ): AuthPanel {
         return match ($role) {
-            SystemRole::CUSTOMER
-            => AuthPanel::CUSTOMER,
+            SystemRole::CUSTOMER => AuthPanel::CUSTOMER,
 
             SystemRole::SELLER,
             SystemRole::SELLER_MANAGER,
-            SystemRole::SELLER_STAFF
-            => AuthPanel::SELLER,
+            SystemRole::SELLER_STAFF => AuthPanel::SELLER,
 
-            default
-            => AuthPanel::ADMIN,
+            default => AuthPanel::ADMIN,
         };
     }
 }

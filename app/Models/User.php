@@ -8,14 +8,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Laravel\Sanctum\HasApiTokens;
-use Spatie\Permission\Traits\HasRoles;
-
 use Illuminate\Support\Str;
+use Laravel\Sanctum\HasApiTokens;
+
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-
     protected $fillable = [
         'uuid',
         'name',
@@ -25,15 +24,21 @@ class User extends Authenticatable
         'status',
         'last_login_at',
         'last_login_ip',
-        'email_verified_at'
+        'email_verified_at',
+        'failed_login_attempts',
+        'locked_at',
+        'locked_until',
+        'lock_reason',
+        'last_failed_login_at',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
     ];
+
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, Notifiable, HasApiTokens;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     protected string $guard_name = 'api';
 
@@ -44,23 +49,21 @@ class User extends Authenticatable
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'status' => UserAccountStatus::class,
+
+            'locked_at' => 'datetime',
+            'locked_until' => 'datetime',
+            'last_failed_login_at' => 'datetime',
+            'failed_login_attempts' => 'integer',
         ];
     }
 
     protected static function booted(): void
-
     {
-    
         static::creating(function (User $user): void {
-    
             if (empty($user->uuid)) {
-    
                 $user->uuid = (string) Str::ulid();
-    
             }
-    
         });
-    
     }
 
     public function loginOtps(): HasMany
