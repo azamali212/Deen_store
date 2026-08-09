@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Auth\Services;
 
+use App\Domain\Auth\Actions\EnsurePasswordNotReusedAction;
+use App\Domain\Auth\Actions\StorePasswordHistoryAction;
 use App\Domain\Auth\DTO\ChangePasswordDTO;
 use App\Domain\Auth\Events\PasswordChanged;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
@@ -15,10 +17,12 @@ final readonly class ChangePasswordService
 {
     public function __construct(
         private AuthRepositoryInterface $repository,
+        private EnsurePasswordNotReusedAction $ensurePasswordNotReusedAction,
+        private StorePasswordHistoryAction $storePasswordHistoryAction,
     ) {}
 
     public function change(
-        ChangePasswordDTO $dto
+        ChangePasswordDTO $dto,
     ): void {
 
         DB::transaction(
@@ -26,49 +30,85 @@ final readonly class ChangePasswordService
 
                 $user = $this->repository
                     ->findUserById(
-                        $dto->userId
+                        $dto->userId,
                     );
 
                 if (! $user) {
                     throw new RuntimeException(
-                        'User not found.'
+                        'User not found.',
                     );
                 }
 
                 if (! Hash::check(
                     $dto->currentPassword,
-                    $user->password
+                    $user->password,
                 )) {
                     throw new RuntimeException(
-                        'Current password is incorrect.'
+                        'Current password is incorrect.',
                     );
                 }
 
                 if (Hash::check(
                     $dto->newPassword,
-                    $user->password
+                    $user->password,
                 )) {
                     throw new RuntimeException(
-                        'New password must be different from current password.'
+                        'New password must be different from current password.',
                     );
                 }
+
+                /*
+                |--------------------------------------------------------------------------
+                | Check Password History
+                |--------------------------------------------------------------------------
+                */
+
+                $this->ensurePasswordNotReusedAction
+                    ->execute(
+                        user: $user,
+                        newPassword: $dto->newPassword,
+                    );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Store Current Password In History
+                |--------------------------------------------------------------------------
+                */
+
+                $this->storePasswordHistoryAction
+                    ->execute(
+                        user: $user,
+                        hashedPassword: $user->password,
+                    );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Update Password
+                |--------------------------------------------------------------------------
+                */
 
                 $this->repository
                     ->updateUser(
                         $user,
                         [
                             'password' => Hash::make(
-                                $dto->newPassword
+                                $dto->newPassword,
                             ),
-                        ]
+                        ],
                     );
+
+                /*
+                |--------------------------------------------------------------------------
+                | Dispatch Event
+                |--------------------------------------------------------------------------
+                */
 
                 event(
                     new PasswordChanged(
-                        $user
-                    )
+                        $user,
+                    ),
                 );
-            }
+            },
         );
     }
 }

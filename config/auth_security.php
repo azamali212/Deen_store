@@ -13,4 +13,17 @@ return [
         'max_failed_attempts' => env('ACCOUNT_LOCKOUT_MAX_ATTEMPTS', 2),
         'duration_minutes' => env('ACCOUNT_LOCKOUT_DURATION_MINUTES', 60),
     ],
+    /*
+    |--------------------------------------------------------------------------
+    | Password History
+    |--------------------------------------------------------------------------
+    */
+    'password_history' => [
+        /*
+        |--------------------------------------------------------------------------
+        | Number of previous passwords that cannot be reused.
+        |--------------------------------------------------------------------------
+        */
+        'remember' => 5,
+    ],
 ];

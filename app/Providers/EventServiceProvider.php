@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Audit\Listeners\AuditAccountLockedListener;
+use App\Domain\Audit\Listeners\AuditAccountUnlockedListener;
 use App\Domain\Auth\Events\AccountLocked;
 use App\Domain\Auth\Events\AccountUnlocked;
 use App\Domain\Auth\Events\EmailVerificationRequested;
@@ -11,6 +13,7 @@ use App\Domain\Auth\Events\EmailVerified;
 use App\Domain\Auth\Events\LoginFailed;
 use App\Domain\Auth\Events\OtpSent;
 use App\Domain\Auth\Events\PasswordChanged;
+use App\Domain\Auth\Events\PasswordHistoryCreated;
 use App\Domain\Auth\Events\PasswordResetCompleted;
 use App\Domain\Auth\Events\PasswordResetRequested;
 use App\Domain\Auth\Events\SessionTerminated;
@@ -21,6 +24,7 @@ use App\Domain\Auth\Events\UserLoggedIn;
 use App\Domain\Auth\Listeners\LogAccountLockedListener;
 use App\Domain\Auth\Listeners\LogAccountUnlockedListener;
 use App\Domain\Auth\Listeners\LogFailedLoginListener;
+use App\Domain\Auth\Listeners\LogPasswordHistoryCreatedListener;
 use App\Domain\Auth\Listeners\LogSessionTerminatedListener;
 use App\Domain\Auth\Listeners\LogSuccessfulLoginListener;
 use App\Domain\Auth\Listeners\LogTrustedDeviceRevokedListener;
@@ -93,11 +97,17 @@ final class EventServiceProvider extends ServiceProvider
         AccountLocked::class => [
             LogAccountLockedListener::class,
             SendAccountLockedNotificationListener::class,
+            AuditAccountLockedListener::class,
         ],
 
         AccountUnlocked::class => [
             LogAccountUnlockedListener::class,
             SendAccountUnlockedNotificationListener::class,
+            AuditAccountUnlockedListener::class,
+        ],
+
+        PasswordHistoryCreated::class => [
+            LogPasswordHistoryCreatedListener::class,
         ],
     ];
 

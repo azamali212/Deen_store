@@ -3,6 +3,7 @@
 use App\Domain\Auth\Exceptions\AccountLockedException;
 use App\Domain\Auth\Exceptions\TooManyLoginAttemptsException;
 use App\Http\Middleware\EnsureAccountIsActive;
+use App\Http\Middleware\EnsureAuditCorrelationId;
 use App\Http\Middleware\EnsureOtpVerified;
 use App\Http\Middleware\EnsurePanelAccess;
 use App\Http\Middleware\EnsureTrustedDevice;
@@ -24,6 +25,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->api(
+            append: [
+                EnsureAuditCorrelationId::class,
+            ],
+        );
         $middleware->alias([
             'panel' => EnsurePanelAccess::class,
             'active' => EnsureAccountIsActive::class,
@@ -32,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
+            // EnsureAuditCorrelationId::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
