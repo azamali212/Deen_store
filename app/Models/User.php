@@ -30,6 +30,11 @@ class User extends Authenticatable
         'locked_until',
         'lock_reason',
         'last_failed_login_at',
+        'two_factor_enabled',
+        'two_factor_provider',
+        'two_factor_secret',
+        'two_factor_confirmed_at',
+        'two_factor_last_verified_at',
     ];
 
     protected $hidden = [
@@ -49,11 +54,13 @@ class User extends Authenticatable
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'status' => UserAccountStatus::class,
-
             'locked_at' => 'datetime',
             'locked_until' => 'datetime',
             'last_failed_login_at' => 'datetime',
             'failed_login_attempts' => 'integer',
+            'two_factor_enabled' => 'boolean',
+            'two_factor_confirmed_at' => 'datetime',
+            'two_factor_last_verified_at' => 'datetime',
         ];
     }
 
@@ -89,5 +96,12 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return $this->status === UserAccountStatus::ACTIVE;
+    }
+
+    public function twoFactorRecoveryCodes(): HasMany
+    {
+        return $this->hasMany(
+            TwoFactorRecoveryCode::class,
+        );
     }
 }

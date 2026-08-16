@@ -39,4 +39,9 @@ enum AuditAction: string
     case ORDER_REFUNDED = 'order.refunded';
     case PAYMENT_REFUNDED = 'payment.refunded';
     case SELLER_SUSPENDED = 'seller.suspended';
+
+    case TWO_FACTOR_VERIFIED = 'auth.two_factor.verified';
+    case RECOVERY_CODE_USED = 'auth.recovery_code.used';
+    case RECOVERY_CODES_GENERATED = 'auth.recovery_codes.generated';
+    case RECOVERY_CODES_REGENERATED = 'auth.recovery_codes.regenerated';
 }

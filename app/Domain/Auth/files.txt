@@ -265,6 +265,224 @@ bootstrap
 ├── 🔜 Password History
 
 ├── 🔜 Two-Factor Authentication (2FA)
+Ab hum enterprise-grade TOTP (Time-based One-Time Password) module banayenge. Ye wahi architecture hoga jo GitHub, Google, Microsoft aur AWS follow karte hain, aur tumhare existing DDD structure (DTO → Action → Service → Repository → Events → Listeners → Notifications → Audit) ke saath perfectly fit hoga.
+
+⸻
+
+Enterprise Folder Structure
+
+Domain
+└── Auth
+    │
+    ├── Actions
+    │   ├── EnableTwoFactorAction.php
+    │   ├── ConfirmTwoFactorAction.php
+    │   ├── VerifyTwoFactorAction.php
+    │   ├── DisableTwoFactorAction.php
+    │   ├── GenerateRecoveryCodesAction.php
+    │   ├── RegenerateRecoveryCodesAction.php
+    │   ├── VerifyRecoveryCodeAction.php
+    │
+    ├── DTO
+    │   ├── EnableTwoFactorDTO.php
+    │   ├── ConfirmTwoFactorDTO.php
+    │   ├── VerifyTwoFactorDTO.php
+    │   ├── DisableTwoFactorDTO.php
+    │   ├── RegenerateRecoveryCodesDTO.php
+    │   └── VerifyRecoveryCodeDTO.php
+    │
+    ├── Services
+    │   ├── TwoFactorService.php
+    │   ├── TotpService.php
+    │   ├── RecoveryCodeService.php
+    │   ├── TwoFactorQrCodeService.php
+    │   └── TwoFactorSecretService.php
+    │
+    ├── Repositories
+    │   ├── Contracts
+    │   │   └── TwoFactorRepositoryInterface.php
+    │   │
+    │   ├── DTO
+    │   │   ├── CreateRecoveryCodeData.php
+    │   │   └── UpdateTwoFactorData.php
+    │   │
+    │   ├── Queries
+    │   │   └── TwoFactorQuery.php
+    │   │
+    │   └── TwoFactorRepository.php
+    │
+    ├── Events
+    │   ├── TwoFactorEnabled.php
+    │   ├── TwoFactorDisabled.php
+    │   ├── TwoFactorVerified.php
+    │   ├── RecoveryCodesGenerated.php
+    │   ├── RecoveryCodesRegenerated.php
+    │   └── RecoveryCodeUsed.php
+    │
+    ├── Listeners
+    │   ├── LogTwoFactorEnabledListener.php
+    │   ├── LogTwoFactorDisabledListener.php
+    │   ├── LogRecoveryCodeUsedListener.php
+    │   ├── SendTwoFactorEnabledNotificationListener.php
+    │   ├── SendTwoFactorDisabledNotificationListener.php
+    │   └── SendRecoveryCodesNotificationListener.php
+    │
+    ├── Notifications
+    │   ├── TwoFactorEnabledNotification.php
+    │   ├── TwoFactorDisabledNotification.php
+    │   └── RecoveryCodesNotification.php
+    │
+    ├── Exceptions
+    │   ├── InvalidTwoFactorCodeException.php
+    │   ├── TwoFactorAlreadyEnabledException.php
+    │   ├── TwoFactorNotEnabledException.php
+    │   ├── InvalidRecoveryCodeException.php
+    │   └── RecoveryCodeAlreadyUsedException.php
+    │
+    ├── Support
+    │   ├── TotpGenerator.php
+    │   ├── RecoveryCodeGenerator.php
+    │   └── Base32Encoder.php
+    │
+    └── Enums
+        └── TwoFactorProvider.php
+
+⸻
+
+Models
+
+Models
+TwoFactorRecoveryCode.php
+
+⸻
+
+Database
+
+users
+two_factor_enabled
+two_factor_secret
+two_factor_confirmed_at
+two_factor_recovery_codes
+id
+user_id
+code
+used_at
+created_at
+updated_at
+
+⸻
+
+HTTP Layer
+
+Http
+└── Controllers
+    ├── AdminTwoFactorController.php
+    ├── CustomerTwoFactorController.php
+    └── SellerTwoFactorController.php
+
+⸻
+
+Http
+└── Requests
+    ├── EnableTwoFactorRequest.php
+    ├── ConfirmTwoFactorRequest.php
+    ├── VerifyTwoFactorRequest.php
+    ├── DisableTwoFactorRequest.php
+    ├── RegenerateRecoveryCodesRequest.php
+    └── VerifyRecoveryCodeRequest.php
+
+⸻
+
+Http
+└── Resources
+    ├── TwoFactorSetupResource.php
+    ├── TwoFactorStatusResource.php
+    ├── RecoveryCodesResource.php
+    └── VerifyTwoFactorResource.php
+
+⸻
+
+APIs
+
+POST /2fa/enable
+
+QR Code generate karega.
+
+⸻
+
+POST /2fa/confirm
+
+Authenticator app ka pehla code verify karega.
+
+⸻
+
+POST /2fa/verify
+
+Login ke baad TOTP verify karega.
+
+⸻
+
+POST /2fa/disable
+
+2FA off karega.
+
+⸻
+
+POST /2fa/recovery-code
+
+Recovery code verify karega.
+
+⸻
+
+POST /2fa/recovery-codes/regenerate
+
+Naye recovery codes generate karega.
+
+⸻
+
+Login Flow
+
+Password
+↓
+Account Lock
+↓
+Trusted Device?
+↓
+Email OTP (New Device)
+↓
+2FA Enabled?
+↓
+No
+↓
+Token
+──────────────
+Yes
+↓
+Google Authenticator
+↓
+Recovery Code?
+↓
+Token
+
+⸻
+
+Is structure ki khas baat
+
+Ye sirf “2FA” nahi hai, balki ek complete Identity Security Module hai:
+
+* ✅ Google Authenticator (RFC 6238 TOTP)
+* ✅ Recovery Codes
+* ✅ QR Code Setup
+* ✅ Trusted Devices Integration
+* ✅ Audit Logs
+* ✅ Notifications
+* ✅ Admin Force Disable
+* ✅ API-first
+* ✅ Future me Microsoft Authenticator, Authy ya Security Keys add karna bhi aasaan hoga.
+
+Meri ek recommendation
+
+Main is structure me ek alag Domain/TwoFactor folder nahi banaunga. Main ise Domain/Auth ke andar hi rakhunga, kyunki 2FA authentication ka hi hissa hai. Isse tumhara project zyada consistent aur maintainable rahega.
 
 ├── 🔜 Social Login
 

@@ -15,15 +15,11 @@ use App\Domain\Auth\Enums\AuthStatus;
 use App\Domain\Auth\Enums\LoginProvider;
 use App\Domain\Auth\Enums\LoginRiskLevel;
 use App\Domain\Auth\Enums\OtpPurpose;
-use App\Domain\Auth\Events\Data\LoginEventData;
 use App\Domain\Auth\Events\UserCreated;
-use App\Domain\Auth\Events\UserLoggedIn;
 use App\Domain\Auth\Exceptions\AccountInactiveException;
 use App\Domain\Auth\Exceptions\InvalidCredentialsException;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
 use App\Domain\Auth\Repositories\DTO\CreateLoginLogData;
-use App\Domain\Auth\Repositories\DTO\CreateSessionData;
-use App\Domain\Auth\Repositories\DTO\CreateTrustedDeviceData;
 use App\Domain\Auth\Repositories\DTO\CreateUserData;
 use App\Domain\Permissions\Enums\SystemRole;
 use App\Models\User;
@@ -36,13 +32,11 @@ final readonly class AuthService
     public function __construct(
         private AuthRepositoryInterface $repository,
         private PanelAccessService $panelAccessService,
-        private SessionService $sessionService,
         private OtpService $otpService,
-        private DeviceFingerprintService $deviceFingerprintService,
-        private SuspiciousLoginService $suspiciousLoginService,
         private AuthRiskScoringService $riskScoringService,
         private LoginRateLimitService $loginRateLimitService,
         private AccountLockoutService $accountLockoutService,
+        private LoginCompletionService $loginCompletionService,
     ) {}
 
     public function login(LoginDTO $dto): AuthResult
@@ -146,6 +140,7 @@ final readonly class AuthService
             accessiblePanels: [],
             requiresOtp: true,
             requiresStepUp: $riskScore >= 70,
+            requiresTwoFactor: false,
             message: 'OTP has been sent to your email address.',
         );
     }
@@ -237,100 +232,36 @@ final readonly class AuthService
             );
         }
 
+        if ($user->two_factor_enabled) {
+
+            return new AuthResult(
+                user: $user,
+                token: '',
+                tokenName: '',
+                sessionId: null,
+                abilities: [],
+                accessiblePanels: [],
+                requiresOtp: false,
+                requiresStepUp: false,
+                requiresTwoFactor: true,
+                message: 'Two-factor authentication required.',
+            );
+        }
+
         $this->loginRateLimitService
             ->clear(
                 $rateLimit,
             );
 
-        $deviceName = $dto->deviceName
-            ?? 'unknown-device';
-
-        $fingerprint = $this->deviceFingerprintService
-            ->generate(
-                ipAddress: $dto->ipAddress,
-                userAgent: $dto->userAgent,
-                deviceName: $deviceName,
-                panel: $dto->panel->value,
-            );
-        $tokenName = $dto->panel->value.'-panel';
-
-        $token = $user->createToken(
-            $tokenName,
-            ['*'],
-        );
-
-        $session = $this->sessionService->create(
-            new CreateSessionData(
-                userId: (string) $user->id,
-                tokenId: (string) $token->accessToken->id,
-                panel: $dto->panel,
-                ipAddress: $dto->ipAddress,
-                userAgent: $dto->userAgent,
-                deviceName: $deviceName,
-            ),
-        );
-        $this->repository->saveTrustedDevice(
-            new CreateTrustedDeviceData(
-                userId: (string) $user->id,
-                fingerprint: $fingerprint,
-                deviceName: $deviceName,
-                ipAddress: $dto->ipAddress,
-                userAgent: $dto->userAgent,
-                trustedUntil: now()->addDays(30),
-            ),
-        );
-        $this->repository->updateUser(
-            $user,
-            [
-                'last_login_at' => now(),
-                'last_login_ip' => $dto->ipAddress,
-            ],
-        );
-
-        $this->repository->createLoginLog(
-
-            new CreateLoginLogData(
-                status: AuthStatus::SUCCESS,
+        return $this->loginCompletionService
+            ->complete(
+                user: $user,
                 panel: $dto->panel,
                 provider: $dto->provider,
-                riskLevel: LoginRiskLevel::LOW,
-                userId: (string) $user->id,
-                email: $user->email,
                 ipAddress: $dto->ipAddress,
                 userAgent: $dto->userAgent,
-                deviceName: $deviceName,
-            ),
-        );
-        event(
-            new UserLoggedIn(
-                new LoginEventData(
-                    userId: (string) $user->id,
-                    email: $user->email,
-                    panel: $dto->panel,
-                    provider: $dto->provider,
-                    ipAddress: $dto->ipAddress ?? '',
-                    userAgent: $dto->userAgent,
-                    deviceName: $deviceName,
-                    browser: null,
-                    operatingSystem: null,
-                    riskScore: 0,
-                    occurredAt: now(),
-                ),
-            ),
-
-        );
-
-        return new AuthResult(
-            user: $user,
-            token: $token->plainTextToken,
-            tokenName: $tokenName,
-            sessionId: (string) $session->id,
-            abilities: ['*'],
-            accessiblePanels: $this->panelAccessService->accessiblePanels($user),
-            requiresOtp: false,
-            requiresStepUp: false,
-            message: 'Login successful.',
-        );
+                deviceName: $dto->deviceName,
+            );
     }
 
     private function logFailedLogin(

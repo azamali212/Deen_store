@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Auth\AdminAuthController;
+use App\Http\Controllers\Auth\TwoFactorController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/admin/auth')
@@ -25,6 +26,9 @@ Route::prefix('v1/admin/auth')
 
         Route::post('/reset-password', [AdminAuthController::class, 'resetPassword'])
             ->name('reset-password');
+
+        Route::post('/two-factor/verify', [TwoFactorController::class, 'verify'])
+            ->name('two-factor.verify');
 
         Route::middleware([
             'auth:sanctum',
@@ -61,5 +65,21 @@ Route::prefix('v1/admin/auth')
 
             Route::post('/unlock-account', [AdminAuthController::class, 'unlockAccount'])
                 ->name('unlock-account');
+
+            Route::post('/two-factor/enable', [TwoFactorController::class, 'enable'])
+                ->name('two-factor.enable');
+
+            Route::post('/two-factor/confirm', [TwoFactorController::class, 'confirm'])
+                ->name('two-factor.confirm');
+
+            Route::delete('/two-factor/disable', [TwoFactorController::class, 'disable'])
+                ->name('two-factor.disable');
+
+            Route::post('/two-factor/recovery-codes/regenerate', [TwoFactorController::class, 'regenerateRecoveryCodes'])
+                ->name('two-factor.recovery-codes.regenerate');
+
+            Route::post('/two-factor/recovery-code/verify', [TwoFactorController::class, 'verifyRecoveryCode'])
+                ->name('two-factor.recovery-code.verify');
+
         });
     });

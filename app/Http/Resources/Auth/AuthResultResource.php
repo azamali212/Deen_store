@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Auth;
 
+use App\Domain\Auth\DTO\AuthResult;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Domain\Auth\DTO\AuthResult
+ * @mixin AuthResult
  */
 final class AuthResultResource extends JsonResource
 {
@@ -18,7 +19,7 @@ final class AuthResultResource extends JsonResource
             'success' => true,
 
             'user' => new UserResource(
-                $this->user
+                $this->user,
             ),
 
             'token' => $this->token,
@@ -36,6 +37,7 @@ final class AuthResultResource extends JsonResource
             'requires_step_up' => $this->requiresStepUp,
 
             'message' => $this->message,
+            'requires_two_factor' => $this->requiresTwoFactor,
         ];
     }
 }

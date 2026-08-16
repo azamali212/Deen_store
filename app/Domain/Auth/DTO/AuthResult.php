@@ -15,9 +15,10 @@ final readonly class AuthResult
         public ?string $sessionId,
         public array $abilities,
         public array $accessiblePanels,
-        public bool $requiresOtp = false,
-        public bool $requiresStepUp = false,
-        public ?string $message = null,
+        public bool $requiresOtp,
+        public bool $requiresStepUp,
+        public ?string $message,
+        public bool $requiresTwoFactor,
     ) {}
 
     public function toArray(): array
