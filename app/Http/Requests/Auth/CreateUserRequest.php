@@ -7,8 +7,8 @@ namespace App\Http\Requests\Auth;
 use App\Domain\Permissions\Enums\SystemRole;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 final class CreateUserRequest extends FormRequest
 {
@@ -26,7 +26,6 @@ final class CreateUserRequest extends FormRequest
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
-
     {
         return [
             'name' => [
@@ -57,7 +56,7 @@ final class CreateUserRequest extends FormRequest
             // Seller only
             'store_name' => [
                 Rule::requiredIf(
-                    fn () => request('role') === SystemRole::SELLER->value
+                    fn () => request('role') === SystemRole::SELLER->value,
                 ),
                 'nullable',
                 'string',
@@ -72,6 +71,10 @@ final class CreateUserRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:255',
+            ],
+            'captcha_token' => [
+                'required',
+                'string',
             ],
         ];
     }

@@ -21,6 +21,8 @@ use App\Domain\Auth\Exceptions\InvalidCredentialsException;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
 use App\Domain\Auth\Repositories\DTO\CreateLoginLogData;
 use App\Domain\Auth\Repositories\DTO\CreateUserData;
+use App\Domain\Captcha\DTO\VerifyCaptchaDTO;
+use App\Domain\Captcha\Services\CaptchaService;
 use App\Domain\Permissions\Enums\SystemRole;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -37,10 +39,19 @@ final readonly class AuthService
         private LoginRateLimitService $loginRateLimitService,
         private AccountLockoutService $accountLockoutService,
         private LoginCompletionService $loginCompletionService,
+        private CaptchaService $captchaService,
     ) {}
 
     public function login(LoginDTO $dto): AuthResult
     {
+
+        $this->captchaService
+            ->verify(
+                new VerifyCaptchaDTO(
+                    token: $dto->captchaToken,
+                    ipAddress: $dto->ipAddress,
+                ),
+            );
         $rateLimit = LoginRateLimitDTO::make(
             email: $dto->email,
             panel: $dto->panel,

@@ -13,11 +13,13 @@ final readonly class LoginDTO
         public string $email,
         public string $password,
         public AuthPanel $panel,
-        public LoginProvider $provider = LoginProvider::PASSWORD,
-        public ?string $ipAddress = null,
-        public ?string $userAgent = null,
-        public ?string $deviceName = null,
-        public bool $remember = false,
+        public LoginProvider $provider,
+        public ?string $ipAddress,
+        public ?string $userAgent,
+        public ?string $deviceName,
+        public bool $remember,
+        // Captcha
+        public string $captchaToken,
     ) {}
 
     public static function fromArray(
@@ -26,10 +28,12 @@ final readonly class LoginDTO
         ?string $ipAddress = null,
         ?string $userAgent = null,
         ?string $deviceName = null,
+
     ): self {
         return new self(
             email: self::cleanEmail($data['email']),
             password: (string) $data['password'],
+            captchaToken: $data['captcha_token'],
             panel: $panel,
             provider: isset($data['provider'])
                 ? LoginProvider::from((string) $data['provider'])

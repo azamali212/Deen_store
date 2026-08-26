@@ -31,6 +31,10 @@ final class ResetPasswordRequest extends FormRequest
                 'min:8',
                 'confirmed',
             ],
+            'captcha_token' => [
+                'required',
+                'string',
+            ],
 
         ];
     }

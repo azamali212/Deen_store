@@ -15,7 +15,8 @@ final readonly class CreateUserDTO
         public ?string $phone,
         public SystemRole $role,
         public string $createdByUserId,
-        public ?string $ipAddress = null,
+        public ?string $ipAddress,
+        public string $captchaToken,
         public ?string $userAgent = null,
     ) {}
 
@@ -23,41 +24,45 @@ final readonly class CreateUserDTO
     {
         return new self(
             name: self::cleanString(
-                $data['name']
+                $data['name'],
             ),
             email: self::cleanEmail(
-                $data['email']
+                $data['email'],
             ),
+            captchaToken: $data['captcha_token'],
             password: (string) $data['password'],
             phone: self::nullableString(
                 $data,
-                'phone'
+                'phone',
             ),
             role: SystemRole::from(
-                (string) $data['role']
+                (string) $data['role'],
             ),
             createdByUserId: $createdByUserId,
             ipAddress: $ipAddress,
             userAgent: $userAgent,
         );
     }
+
     private static function cleanEmail(
-        mixed $email
+        mixed $email,
     ): string {
         return strtolower(
-            trim((string) $email)
+            trim((string) $email),
         );
     }
+
     private static function cleanString(
-        mixed $value
+        mixed $value,
     ): string {
         return trim(
-            (string) $value
+            (string) $value,
         );
     }
+
     private static function nullableString(
         array $data,
-        string $key
+        string $key,
     ): ?string {
         return isset($data[$key]) && $data[$key] !== ''
             ? trim((string) $data[$key])
