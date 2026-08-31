@@ -6,6 +6,7 @@ use App\Domain\Auth\Enums\UserAccountStatus;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
@@ -25,6 +26,7 @@ class User extends Authenticatable
         'last_login_at',
         'last_login_ip',
         'email_verified_at',
+        'phone_verified_at', // ✅ Add
         'failed_login_attempts',
         'locked_at',
         'locked_until',
@@ -40,10 +42,11 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
     ];
 
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, HasRoles, Notifiable;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable,SoftDeletes;
 
     protected string $guard_name = 'api';
 
@@ -61,6 +64,8 @@ class User extends Authenticatable
             'two_factor_enabled' => 'boolean',
             'two_factor_confirmed_at' => 'datetime',
             'two_factor_last_verified_at' => 'datetime',
+            'phone_verified_at' => 'datetime',
+            'deleted_at' => 'datetime',
         ];
     }
 

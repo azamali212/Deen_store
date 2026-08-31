@@ -17,6 +17,17 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            $table->string('phone', 30)->nullable()->unique();
+            $table->timestamp('phone_verified_at')->nullable();
+            $table->enum('status', [
+                'active',
+                'inactive',
+                'pending',
+                'suspended',
+                'banned',
+            ])->default('active');
+            $table->timestamp('last_login_at')->nullable();
+            $table->softDeletes();
             $table->rememberToken();
             $table->timestamps();
         });

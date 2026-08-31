@@ -1,0 +1,147 @@
+User Domain System Folder Structure
+
+app/
+└── Domain/
+    └── User/
+        │
+        ├── Actions/
+        │   ├── GetUserAction.php
+        │   ├── SearchUsersAction.php
+        │   ├── UpdateUserAction.php
+        │   ├── DeleteUserAction.php
+        │   ├── RestoreUserAction.php
+        │   ├── SuspendUserAction.php
+        │   ├── ActivateUserAction.php
+        │   │
+        │   ├── GetProfileAction.php
+        │   ├── UpdateProfileAction.php
+        │   │
+        │   ├── UploadAvatarAction.php
+        │   ├── DeleteAvatarAction.php
+        │   │
+        │   ├── AddAddressAction.php
+        │   ├── UpdateAddressAction.php
+        │   ├── DeleteAddressAction.php
+        │   ├── SetDefaultAddressAction.php
+        │   │
+        │   ├── UpdatePreferencesAction.php
+        │   │
+        │   ├── VerifyPhoneAction.php
+        │   │
+        │   └── CalculateProfileCompletionAction.php
+        │
+        ├── DTO/
+        │   ├── UpdateUserDTO.php
+        │   ├── UpdateProfileDTO.php
+        │   ├── UpdateAvatarDTO.php
+        │   ├── UserAddressDTO.php
+        │   ├── UpdatePreferenceDTO.php
+        │   ├── UserStatusDTO.php
+        │   ├── VerifyPhoneDTO.php
+        │   └── UserFilterDTO.php
+        │
+        ├── Services/
+        │   ├── UserService.php
+        │   ├── ProfileService.php
+        │   ├── AvatarService.php
+        │   ├── AddressService.php
+        │   ├── PreferenceService.php
+        │   ├── UserStatusService.php
+        │   ├── UserSearchService.php
+        │   ├── PhoneVerificationService.php
+        │   ├── ProfileCompletionService.php
+        │   └── UserValidationService.php
+        │
+        ├── Repositories/
+        │   ├── Contracts/
+        │   │   └── UserRepositoryInterface.php
+        │   │
+        │   ├── DTO/
+        │   │   ├── UpdateUserData.php
+        │   │   ├── UpdateProfileData.php
+        │   │   ├── UpdatePreferenceData.php
+        │   │   ├── AddressData.php
+        │   │   └── UserSearchData.php
+        │   │
+        │   ├── Queries/
+        │   │   └── UserQuery.php
+        │   │
+        │   └── UserRepository.php
+        │
+        ├── Contracts/
+        │   └── AvatarStorageInterface.php
+        │
+        ├── Events/
+        │   ├── UserUpdated.php
+        │   ├── UserDeleted.php
+        │   ├── UserRestored.php
+        │   ├── UserActivated.php
+        │   ├── UserSuspended.php
+        │   ├── ProfileUpdated.php
+        │   ├── AvatarUploaded.php
+        │   ├── AvatarDeleted.php
+        │   ├── AddressAdded.php
+        │   ├── AddressUpdated.php
+        │   ├── AddressDeleted.php
+        │   ├── DefaultAddressChanged.php
+        │   ├── PreferencesUpdated.php
+        │   ├── PhoneVerified.php
+        │   └── ProfileCompletionUpdated.php
+        │
+        ├── Listeners/
+        │   ├── LogUserUpdatedListener.php
+        │   ├── LogUserDeletedListener.php
+        │   ├── LogUserStatusChangedListener.php
+        │   ├── SendPhoneVerifiedNotificationListener.php
+        │   ├── UpdateProfileCompletionListener.php
+        │   └── ClearUserCacheListener.php
+        │
+        ├── Notifications/
+        │   ├── ProfileUpdatedNotification.php
+        │   ├── PhoneVerifiedNotification.php
+        │   ├── UserActivatedNotification.php
+        │   └── UserSuspendedNotification.php
+        │
+        ├── Exceptions/
+        │   ├── UserNotFoundException.php
+        │   ├── AddressNotFoundException.php
+        │   ├── InvalidAvatarException.php
+        │   ├── InvalidPhoneException.php
+        │   ├── UserAlreadySuspendedException.php
+        │   └── ProfileIncompleteException.php
+        │
+        ├── Enums/
+        │   ├── UserStatus.php
+        │   ├── Gender.php
+        │   ├── AddressType.php
+        │   └── ProfileVisibility.php
+        │
+        ├── Resources/
+        │   ├── UserResource.php
+        │   ├── UserCollection.php
+        │   ├── UserProfileResource.php
+        │   ├── UserSummaryResource.php
+        │   ├── AddressResource.php
+        │   └── PreferenceResource.php
+        │
+        ├── Support/
+        │   ├── AvatarUploader.php
+        │   ├── AvatarRemover.php
+        │   ├── UserSearchBuilder.php
+        │   ├── ProfileCompletionCalculator.php
+        │   └── ProfileCompletionRules.php
+        │
+        ├── ValueObjects/
+        │   ├── FullName.php
+        │   ├── PhoneNumber.php
+        │   ├── Address.php
+        │   ├── PostalCode.php
+        │   └── AvatarPath.php
+        │
+        ├── Rules/
+        │   ├── StrongNameRule.php
+        │   ├── UniquePhoneRule.php
+        │   └── AvatarMimeRule.php
+        │
+        └── Policies/
+            └── UserPolicy.php
