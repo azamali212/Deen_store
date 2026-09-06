@@ -15,20 +15,13 @@ return new class extends Migration
         Schema::table('users', function (Blueprint $table): void {
 
             $table->ulid('uuid')->unique()->after('id');
-
-            $table->string('phone')->nullable()->after('email');
-
-            $table->string('status')->default(UserAccountStatus::ACTIVE->value)->after('password');
-
-            $table->timestamp('last_login_at')->nullable()->after('email_verified_at');
-
+            // $table->string('phone')->nullable()->after('email');
+            // $table->string('status')->default(UserAccountStatus::ACTIVE->value)->after('password');
+            // $table->timestamp('last_login_at')->nullable()->after('email_verified_at');
             $table->string('last_login_ip', 45)->nullable()->after('last_login_at');
-
             $table->index('uuid');
-
-            $table->index('status');
-
-            $table->index('phone');
+            // $table->index('status');
+            // $table->index('phone');
 
         });
     }
@@ -38,8 +31,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            //
+        Schema::table('users', function (Blueprint $table): void {
+            $table->dropIndex(['last_login_ip']);
+            $table->dropColumn('last_login_ip');
         });
+
     }
 };
