@@ -5,28 +5,33 @@ app/
 └── Domain/
     └── User/
         │
-        ├── Actions/                                    ⏳ EMPTY — next-next step
-        │   ├── GetUserAction.php
-        │   ├── SearchUsersAction.php
-        │   ├── UpdateUserAction.php
-        │   ├── DeleteUserAction.php
-        │   ├── RestoreUserAction.php
-        │   ├── SuspendUserAction.php
-        │   ├── ActivateUserAction.php
-        │   ├── GetProfileAction.php
-        │   ├── UpdateProfileAction.php
-        │   ├── UploadAvatarAction.php
-        │   ├── DeleteAvatarAction.php
-        │   ├── AddAddressAction.php
-        │   ├── UpdateAddressAction.php
-        │   ├── DeleteAddressAction.php
-        │   ├── SetDefaultAddressAction.php
-        │   ├── UpdatePreferencesAction.php
-        │   ├── VerifyPhoneAction.php
-        │   └── CalculateProfileCompletionAction.php
+        ├── Actions/                                    ✅ 17/18 done
+        │   ├── GetUserAction.php                          ✅
+        │   ├── SearchUsersAction.php                       ✅
+        │   ├── UpdateUserAction.php                        ✅
+        │   ├── DeleteUserAction.php                        ✅
+        │   ├── RestoreUserAction.php                       ✅
+        │   ├── SuspendUserAction.php                       ✅
+        │   ├── ActivateUserAction.php                      ✅
+        │   ├── GetProfileAction.php                        ✅
+        │   ├── UpdateProfileAction.php                     ✅
+        │   ├── UploadAvatarAction.php                      ✅
+        │   ├── DeleteAvatarAction.php                      ✅
+        │   ├── AddAddressAction.php                        ✅
+        │   ├── UpdateAddressAction.php                     ✅
+        │   ├── DeleteAddressAction.php                     ✅
+        │   ├── SetDefaultAddressAction.php                 ✅
+        │   ├── UpdatePreferencesAction.php                 ✅
+        │   ├── VerifyPhoneAction.php                       ⏳ deliberately skipped (needs PhoneVerificationService)
+        │   └── CalculateProfileCompletionAction.php        ✅
         │
-        ├── DTO/                                         ✅ 7/8 done
-        │   ├── UpdateUserDTO.php                         ⏳ missing (belongs to `name/email` — check if Auth domain already covers this via CreateUserDTO)
+        │   All Actions follow Auth domain's LoginUserAction pattern exactly:
+        │   final readonly class, constructor-injects ONE Service, single
+        │   execute() method that's a thin pass-through. No business logic
+        │   here — that stays in the Service layer.
+        │
+        ├── DTO/                                         ✅ 8/8 done
+        │   ├── UpdateUserDTO.php                         ✅
         │   ├── UpdateProfileDTO.php                       ✅
         │   ├── UpdateAvatarDTO.php                        ✅
         │   ├── UserAddressDTO.php                         ✅
@@ -35,17 +40,26 @@ app/
         │   ├── VerifyPhoneDTO.php                         ✅
         │   └── UserFilterDTO.php                          ✅
         │
-        ├── Services/                                    ⏳ EMPTY — ★ RECOMMENDED NEXT STEP ★
-        │   ├── UserService.php
-        │   ├── ProfileService.php
-        │   ├── AvatarService.php
-        │   ├── AddressService.php
-        │   ├── PreferenceService.php
-        │   ├── UserStatusService.php
-        │   ├── UserSearchService.php
-        │   ├── PhoneVerificationService.php
-        │   ├── ProfileCompletionService.php
-        │   └── UserValidationService.php
+        ├── Services/                                    ✅ 9/10 done
+        │   ├── UserService.php                            ✅
+        │   ├── ProfileService.php                          ✅
+        │   ├── AvatarService.php                           ✅
+        │   ├── AddressService.php                          ✅
+        │   ├── PreferenceService.php                       ✅
+        │   ├── UserStatusService.php                       ✅
+        │   ├── UserSearchService.php                       ✅
+        │   ├── PhoneVerificationService.php                ⏳ deliberately skipped for now
+        │   ├── ProfileCompletionService.php                ✅ (+ Support/ProfileCompletionCalculator.php)
+        │   └── UserValidationService.php                   ✅ (centralised email/phone/username availability checks)
+        │
+        │   ⚠️ UserService/UserStatusService/UserSearchService inject
+        │      Auth\Repositories\Contracts\AuthRepositoryInterface (not a new
+        │      User-domain repo) — the `users` table is already owned by the
+        │      Auth domain's UserQuery/AuthRepository, so a second repo would
+        │      duplicate that source of truth. Extended AuthRepositoryInterface
+        │      + AuthRepository + UserQuery with: searchUsers(), emailExists(),
+        │      phoneExists(), deleteUser(), restoreUser(), byPhone(),
+        │      byIdWithTrashed().
         │
         ├── Repositories/                                ✅ DONE — bound in AppServiceProvider
         │   ├── Contracts/
@@ -72,11 +86,12 @@ app/
         ├── Notifications/                                ⏳ EMPTY (4 planned)
         │
         ├── Exceptions/                                  ✅ mostly done (8 files)
-        │   ├── UserNotFoundException.php                  ⏳ missing
+        │   ├── UserNotFoundException.php                  ✅
         │   ├── AddressNotFoundException.php               ✅
         │   ├── InvalidAvatarException.php                 ✅
         │   ├── InvalidPhoneException.php                  ✅
-        │   ├── UserAlreadySuspendedException.php          ⏳ missing
+        │   ├── UserAlreadySuspendedException.php          ✅
+        │   ├── InvalidEmailException.php                  ✅ (extra, not in original plan)
         │   ├── ProfileIncompleteException.php             ✅
         │   ├── InvalidPostalCodeException.php             ✅ (extra, not in original plan)
         │   ├── InvalidUsernameException.php               ✅ (extra, not in original plan)
@@ -91,7 +106,14 @@ app/
         │   ├── AddressType.php                            ✅
         │   └── ProfileVisibility.php                      ✅
         │
-        ├── Resources/                                   ⏳ EMPTY (6 planned)
+        ├── Resources/                                   ⚠️ EMPTY — moved to Http layer
+        │   (6 files built, but NOT here — see app/Http/Resources/User/ instead,
+        │    matching the Auth domain's proven convention: Auth domain also has
+        │    NO Domain/Auth/Resources folder, all its Resources live under
+        │    Http/Resources/Auth/. Response-shaping is an HTTP-delivery concern,
+        │    not a domain concern, so User domain now mirrors that exactly:
+        │    UserResource, UserCollection, UserProfileResource,
+        │    UserAddressResource, UserAddressCollection, UserPreferenceResource.)
         ├── Support/                                      ⏳ EMPTY (5 planned)
         │
         ├── ValueObjects/                                 ⚠️ 5 built, differs from plan

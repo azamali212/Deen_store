@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Auth\Repositories;
 
 use App\Domain\Auth\Enums\OtpPurpose;
+use App\Domain\Auth\Enums\UserAccountStatus;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
 use App\Domain\Auth\Repositories\DTO\CreateLoginLogData;
 use App\Domain\Auth\Repositories\DTO\CreateOtpData;
@@ -20,7 +21,9 @@ use App\Models\LoginLog;
 use App\Models\LoginOtp;
 use App\Models\TrustedDevice;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 use App\Domain\Auth\Repositories\DTO\CreateEmailVerificationData;
 use App\Domain\Auth\Repositories\Queries\EmailVerificationQuery;
 use App\Domain\Auth\Repositories\Queries\LoginLogQuery;
@@ -254,5 +257,57 @@ final readonly class AuthRepository implements AuthRepositoryInterface
     public function revokeTrustedDevice(TrustedDevice $device,): bool 
     {
         return (bool) $device->delete();
+    }
+    public function searchUsers(
+        ?string $search,
+        ?UserAccountStatus $status,
+        ?string $role,
+        ?bool $emailVerified,
+        ?bool $phoneVerified,
+        int $perPage,
+    ): LengthAwarePaginator {
+        return $this->users
+            ->search($search, $status, $role, $emailVerified, $phoneVerified)
+            ->paginate($perPage);
+    }
+
+    public function emailExists(string $email, ?int $exceptUserId = null): bool
+    {
+        return $this->users
+            ->byEmail($email)
+            ->when(
+                $exceptUserId !== null,
+                fn (Builder $query): Builder => $query->whereKeyNot($exceptUserId),
+            )
+            ->exists();
+    }
+
+    public function phoneExists(string $phone, ?int $exceptUserId = null): bool
+    {
+        return $this->users
+            ->byPhone($phone)
+            ->when(
+                $exceptUserId !== null,
+                fn (Builder $query): Builder => $query->whereKeyNot($exceptUserId),
+            )
+            ->exists();
+    }
+
+    public function deleteUser(User $user): bool
+    {
+        return (bool) $user->delete();
+    }
+
+    public function restoreUser(int|string $id): ?User
+    {
+        $user = $this->users->byIdWithTrashed($id)->first();
+
+        if ($user === null) {
+            return null;
+        }
+
+        $user->restore();
+
+        return $user;
     }
 }

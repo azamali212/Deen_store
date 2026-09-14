@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Auth\Repositories\Contracts;
 
+use App\Domain\Auth\Enums\UserAccountStatus;
+use Illuminate\Pagination\LengthAwarePaginator;
 use App\Domain\Auth\Repositories\DTO\CreateLoginLogData;
 use App\Domain\Auth\Repositories\DTO\CreateOtpData;
 use App\Domain\Auth\Repositories\DTO\CreateSessionData;
@@ -84,4 +86,20 @@ interface AuthRepositoryInterface
     public function trustedDevices(int|string $userId,): Collection;
     
     public function revokeTrustedDevice(TrustedDevice $device,): bool;
+    public function searchUsers(
+        ?string $search,
+        ?UserAccountStatus $status,
+        ?string $role,
+        ?bool $emailVerified,
+        ?bool $phoneVerified,
+        int $perPage,
+    ): LengthAwarePaginator;
+
+    public function emailExists(string $email, ?int $exceptUserId = null): bool;
+
+    public function phoneExists(string $phone, ?int $exceptUserId = null): bool;
+
+    public function deleteUser(User $user): bool;
+
+    public function restoreUser(int|string $id): ?User;
 }
