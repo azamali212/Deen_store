@@ -1,10 +1,11 @@
-User Domain System Folder Structure
+User Domain System — Folder Structure & Progress Tracker
+(✅ = built & wired | ⏳ = folder exists, empty | ⚠️ = deviated from original plan)
 
 app/
 └── Domain/
     └── User/
         │
-        ├── Actions/
+        ├── Actions/                                    ⏳ EMPTY — next-next step
         │   ├── GetUserAction.php
         │   ├── SearchUsersAction.php
         │   ├── UpdateUserAction.php
@@ -12,35 +13,29 @@ app/
         │   ├── RestoreUserAction.php
         │   ├── SuspendUserAction.php
         │   ├── ActivateUserAction.php
-        │   │
         │   ├── GetProfileAction.php
         │   ├── UpdateProfileAction.php
-        │   │
         │   ├── UploadAvatarAction.php
         │   ├── DeleteAvatarAction.php
-        │   │
         │   ├── AddAddressAction.php
         │   ├── UpdateAddressAction.php
         │   ├── DeleteAddressAction.php
         │   ├── SetDefaultAddressAction.php
-        │   │
         │   ├── UpdatePreferencesAction.php
-        │   │
         │   ├── VerifyPhoneAction.php
-        │   │
         │   └── CalculateProfileCompletionAction.php
         │
-        ├── DTO/
-        │   ├── UpdateUserDTO.php
-        │   ├── UpdateProfileDTO.php
-        │   ├── UpdateAvatarDTO.php
-        │   ├── UserAddressDTO.php
-        │   ├── UpdatePreferenceDTO.php
-        │   ├── UserStatusDTO.php
-        │   ├── VerifyPhoneDTO.php
-        │   └── UserFilterDTO.php
+        ├── DTO/                                         ✅ 7/8 done
+        │   ├── UpdateUserDTO.php                         ⏳ missing (belongs to `name/email` — check if Auth domain already covers this via CreateUserDTO)
+        │   ├── UpdateProfileDTO.php                       ✅
+        │   ├── UpdateAvatarDTO.php                        ✅
+        │   ├── UserAddressDTO.php                         ✅
+        │   ├── UpdatePreferenceDTO.php                    ✅
+        │   ├── UserStatusDTO.php                          ✅
+        │   ├── VerifyPhoneDTO.php                         ✅
+        │   └── UserFilterDTO.php                          ✅
         │
-        ├── Services/
+        ├── Services/                                    ⏳ EMPTY — ★ RECOMMENDED NEXT STEP ★
         │   ├── UserService.php
         │   ├── ProfileService.php
         │   ├── AvatarService.php
@@ -52,96 +47,60 @@ app/
         │   ├── ProfileCompletionService.php
         │   └── UserValidationService.php
         │
-        ├── Repositories/
+        ├── Repositories/                                ✅ DONE — bound in AppServiceProvider
         │   ├── Contracts/
-        │   │   └── UserRepositoryInterface.php
-        │   │
-        │   ├── DTO/
-        │   │   ├── UpdateUserData.php
-        │   │   ├── UpdateProfileData.php
-        │   │   ├── UpdatePreferenceData.php
-        │   │   ├── AddressData.php
-        │   │   └── UserSearchData.php
-        │   │
+        │   │   ├── UserProfileRepositoryInterface.php     ✅
+        │   │   ├── UserAddressRepositoryInterface.php     ✅
+        │   │   └── UserPreferenceRepositoryInterface.php  ✅
         │   ├── Queries/
-        │   │   └── UserQuery.php
-        │   │
-        │   └── UserRepository.php
+        │   │   ├── UserProfileQuery.php                   ✅
+        │   │   └── UserAddressQuery.php                   ✅
+        │   ├── UserProfileRepository.php                  ✅
+        │   ├── UserAddressRepository.php                  ✅
+        │   └── UserPreferenceRepository.php               ✅
+        │   ⚠️ Original plan had ONE generic UserRepositoryInterface + Eloquent/
+        │      subfolder + one UserQuery. We deliberately split it into 3
+        │      (Profile/Address/Preference) since they're 3 separate tables/
+        │      models — cleaner than one No UserQuery.php was
+        │      needed for Preference (simple 1:1, no complex filtering).
         │
-        ├── Contracts/
+        ├── Contracts/                                   ⏳ EMPTY
         │   └── AvatarStorageInterface.php
         │
-        ├── Events/
-        │   ├── UserUpdated.php
-        │   ├── UserDeleted.php
-        │   ├── UserRestored.php
-        │   ├── UserActivated.php
-        │   ├── UserSuspended.php
-        │   ├── ProfileUpdated.php
-        │   ├── AvatarUploaded.php
-        │   ├── AvatarDeleted.php
-        │   ├── AddressAdded.php
-        │   ├── AddressUpdated.php
-        │   ├── AddressDeleted.php
-        │   ├── DefaultAddressChanged.php
-        │   ├── PreferencesUpdated.php
-        │   ├── PhoneVerified.php
-        │   └── ProfileCompletionUpdated.php
+        ├── Events/                                      ⏳ EMPTY (15 planned)
+        ├── Listeners/                                   ⏳ EMPTY (6 planned)
+        ├── Notifications/                                ⏳ EMPTY (4 planned)
         │
-        ├── Listeners/
-        │   ├── LogUserUpdatedListener.php
-        │   ├── LogUserDeletedListener.php
-        │   ├── LogUserStatusChangedListener.php
-        │   ├── SendPhoneVerifiedNotificationListener.php
-        │   ├── UpdateProfileCompletionListener.php
-        │   └── ClearUserCacheListener.php
+        ├── Exceptions/                                  ✅ mostly done (8 files)
+        │   ├── UserNotFoundException.php                  ⏳ missing
+        │   ├── AddressNotFoundException.php               ✅
+        │   ├── InvalidAvatarException.php                 ✅
+        │   ├── InvalidPhoneException.php                  ✅
+        │   ├── UserAlreadySuspendedException.php          ⏳ missing
+        │   ├── ProfileIncompleteException.php             ✅
+        │   ├── InvalidPostalCodeException.php             ✅ (extra, not in original plan)
+        │   ├── InvalidUsernameException.php               ✅ (extra, not in original plan)
+        │   ├── ProfileNotFoundException.php               ✅ (extra, not in original plan)
+        │   └── PreferenceNotFoundException.php            ✅ (extra, not in original plan)
         │
-        ├── Notifications/
-        │   ├── ProfileUpdatedNotification.php
-        │   ├── PhoneVerifiedNotification.php
-        │   ├── UserActivatedNotification.php
-        │   └── UserSuspendedNotification.php
+        ├── Enums/                                        ✅ 3/4 done
+        │   ├── UserStatus.php                             ⚠️ not built — User model already uses
+        │   │                                                 App\Domain\Auth\Enums\UserAccountStatus
+        │   │                                                 instead. Likely intentional (don't duplicate).
+        │   ├── Gender.php                                 ✅
+        │   ├── AddressType.php                            ✅
+        │   └── ProfileVisibility.php                      ✅
         │
-        ├── Exceptions/
-        │   ├── UserNotFoundException.php
-        │   ├── AddressNotFoundException.php
-        │   ├── InvalidAvatarException.php
-        │   ├── InvalidPhoneException.php
-        │   ├── UserAlreadySuspendedException.php
-        │   └── ProfileIncompleteException.php
+        ├── Resources/                                   ⏳ EMPTY (6 planned)
+        ├── Support/                                      ⏳ EMPTY (5 planned)
         │
-        ├── Enums/
-        │   ├── UserStatus.php
-        │   ├── Gender.php
-        │   ├── AddressType.php
-        │   └── ProfileVisibility.php
+        ├── ValueObjects/                                 ⚠️ 5 built, differs from plan
+        │   ├── FullName.php                               ⏳ missing
+        │   ├── PhoneNumber.php                             ✅
+        │   ├── Address.php                                 ✅ (built, but not used anywhere yet — orphaned)
+        │   ├── PostalCode.php                              ✅
+        │   ├── AvatarPath.php                              ✅
+        │   └── Username.php                                ✅ (extra, not in original plan)
         │
-        ├── Resources/
-        │   ├── UserResource.php
-        │   ├── UserCollection.php
-        │   ├── UserProfileResource.php
-        │   ├── UserSummaryResource.php
-        │   ├── AddressResource.php
-        │   └── PreferenceResource.php
-        │
-        ├── Support/
-        │   ├── AvatarUploader.php
-        │   ├── AvatarRemover.php
-        │   ├── UserSearchBuilder.php
-        │   ├── ProfileCompletionCalculator.php
-        │   └── ProfileCompletionRules.php
-        │
-        ├── ValueObjects/
-        │   ├── FullName.php
-        │   ├── PhoneNumber.php
-        │   ├── Address.php
-        │   ├── PostalCode.php
-        │   └── AvatarPath.php
-        │
-        ├── Rules/
-        │   ├── StrongNameRule.php
-        │   ├── UniquePhoneRule.php
-        │   └── AvatarMimeRule.php
-        │
-        └── Policies/
-            └── UserPolicy.php
+        ├── Rules/                                        ⏳ EMPTY (3 planned)
+        └── Policies/                                     ⏳ EMPTY (UserPolicy.php planned)

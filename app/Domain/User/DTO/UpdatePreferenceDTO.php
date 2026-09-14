@@ -11,10 +11,10 @@ final readonly class UpdatePreferenceDTO
     use HasDtoHelpers;
 
     public function __construct(
-        public int $userId,
         public string $language,
         public string $currency,
         public string $timezone,
+        public string $theme,
         public bool $emailNotifications,
         public bool $smsNotifications,
         public bool $pushNotifications,
@@ -24,10 +24,10 @@ final readonly class UpdatePreferenceDTO
     public static function fromArray(array $data): self
     {
         return new self(
-            userId: self::requiredInt($data, 'user_id'),
-            language: self::requiredString($data, 'language'),
-            currency: self::requiredString($data, 'currency'),
-            timezone: self::requiredString($data, 'timezone'),
+            language: self::nullableString($data, 'language') ?? 'en',
+            currency: self::nullableString($data, 'currency') ?? 'USD',
+            timezone: self::nullableString($data, 'timezone') ?? 'UTC',
+            theme: self::nullableString($data, 'theme') ?? 'system',
             emailNotifications: self::boolean($data, 'email_notifications', true),
             smsNotifications: self::boolean($data, 'sms_notifications', false),
             pushNotifications: self::boolean($data, 'push_notifications', true),

@@ -25,4 +25,10 @@ final class InvalidUsernameException extends DomainException
         return (new self("Username '{$value}' contains invalid characters."))
             ->withContext(['value' => $value]);
     }
+
+    public static function taken(string $value): self
+    {
+        return (new self("Username '{$value}' is already taken."))
+            ->withContext(['value' => $value]);
+    }
 }
