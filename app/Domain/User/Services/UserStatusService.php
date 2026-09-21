@@ -12,6 +12,17 @@ use App\Domain\User\Exceptions\UserNotFoundException;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Admin-initiated account status management (active/suspended/banned/etc.,
+ * the `status` column) — a permanent, manual decision by an administrator.
+ *
+ * NOT to be confused with Auth\Services\AccountLockoutService, which is a
+ * separate, automatic mechanism: temporary lockouts after repeated failed
+ * login attempts (`locked_at` / `locked_until` / `failed_login_attempts`).
+ * A user can be blocked by either mechanism independently — both must be
+ * checked wherever "can this user log in?" matters (see User::isActive()
+ * and AccountLockoutService's own lock check).
+ */
 final readonly class UserStatusService
 {
     public function __construct(

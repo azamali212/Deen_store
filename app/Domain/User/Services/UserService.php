@@ -45,11 +45,18 @@ final readonly class UserService
         return $user->refresh();
     }
 
-    public function deleteUser(int $userId): void
+    public function deleteUser(int $userId): User
     {
-        $this->users->deleteUser(
-            $this->findOrFail($userId),
-        );
+        $user = $this->findOrFail($userId);
+
+        $this->users->deleteUser($user);
+
+        // A deleted account must lose access immediately, same as a
+        // suspended/banned one — an existing session/token must not keep
+        // working just because it hasn't expired yet.
+        $this->users->terminateAllSessions($userId);
+
+        return $user;
     }
 
     public function restoreUser(int $userId): User

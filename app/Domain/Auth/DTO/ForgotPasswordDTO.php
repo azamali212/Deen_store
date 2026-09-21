@@ -10,7 +10,6 @@ final readonly class ForgotPasswordDTO
         public string $email,
         public ?string $ipAddress,
         public ?string $userAgent,
-        public string $captchaToken,
     ) {}
 
     public static function fromArray(array $data, ?string $ipAddress = null, ?string $userAgent = null): self
@@ -19,7 +18,6 @@ final readonly class ForgotPasswordDTO
             email: strtolower(trim((string) $data['email'])),
             ipAddress: $ipAddress,
             userAgent: $userAgent,
-            captchaToken: $data['captcha_token'],
         );
     }
 }

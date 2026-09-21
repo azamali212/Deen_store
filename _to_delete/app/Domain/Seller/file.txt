@@ -1,0 +1,70 @@
+Seller Domain — progress tracker
+=================================
+
+WHY THIS DOMAIN EXISTS
+-----------------------
+CreateUserRequest / RegisterSellerRequest were already collecting
+store_name / business_name / business_type at registration time, but
+there was NO table anywhere to persist them — AuthService::createUser()
+only ever read name/email/password/phone into CreateUserData. Every
+seller who registered had their store info silently discarded.
+
+Deliberately NOT added as columns on `users` or folded into the User
+domain — a seller's store is a different concern from a person's
+identity (same reasoning as why Suspend/Activate stayed separate from
+Auth's Lock/Unlock). Amazon/eBay's user/identity service does not own
+storefront data either — it's a separate bounded context that
+references the user by ID.
+
+BUILT (2026-09-21)
+-------------------
+├── database/migrations/2026_09_21_010413_create_seller_profiles_table.php
+│   seller_profiles: user_id (unique FK), store_name (unique), business_name,
+│   business_type, status (pending/approved/rejected/suspended, default
+│   pending — a store is never born approved), approved_by, approved_at,
+│   rejection_reason.
+│
+├── app/Models/SellerProfile.php — belongsTo User, belongsTo User (approvedBy)
+├── app/Models/User.php — added sellerProfile(): HasOne
+│
+├── Enums/SellerProfileStatus.php
+│
+├── Exceptions/
+│   ├── SellerProfileAlreadyExistsException.php
+│   ├── DuplicateStoreNameException.php
+│   └── SellerProfileNotFoundException.php (ready for future read/update use)
+│
+├── DTO/CreateSellerProfileDTO.php
+├── Repositories/DTO/CreateSellerProfileData.php
+├── Repositories/Contracts/SellerRepositoryInterface.php
+├── Repositories/SellerRepository.php
+│   create() catches UniqueConstraintViolationException on store_name race
+│   (two sellers submitting the same store name concurrently) and converts
+│   it to DuplicateStoreNameException instead of a raw 500 — same pattern
+│   already used in UserPreferenceRepository::updateOrCreate().
+├── Services/SellerProfileService.php
+└── Actions/CreateSellerProfileAction.php
+
+WIRED IN
+--------
+- app/Providers/AppServiceProvider.php — SellerRepositoryInterface bound.
+- app/Http/Requests/Auth/CreateUserRequest.php — store_name rule gained
+  `unique:seller_profiles,store_name`.
+- app/Http/Controllers/Auth/BaseAuthController::register() — now wraps
+  user creation + (conditional) seller-profile creation in ONE
+  DB::transaction(). If role === SystemRole::SELLER, CreateSellerProfileAction
+  runs right after CreateUserAction, inside the same transaction, so a
+  seller can never end up with a User row and no Store row (or vice versa).
+  Response now includes a `seller_profile` block when applicable.
+
+STILL MISSING (not in scope of this fix — future work)
+--------------------------------------------------------
+- Admin approve/reject endpoints (status is stored but nothing flips it
+  from pending yet).
+- SELLER_MANAGER / SELLER_STAFF team-membership (which store do they
+  belong to — not designed yet).
+- RegisterSellerRequest.php is still an orphaned file — nothing routes
+  to it. Either wire a public self-serve seller signup flow through it,
+  or delete it to avoid confusion.
+- No tests written for any of this yet (matches the rest of the User
+  domain's current state — flagged separately as its own priority).

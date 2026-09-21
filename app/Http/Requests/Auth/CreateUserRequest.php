@@ -72,10 +72,6 @@ final class CreateUserRequest extends FormRequest
                 'string',
                 'max:255',
             ],
-            'captcha_token' => [
-                'required',
-                'string',
-            ],
         ];
     }
 }

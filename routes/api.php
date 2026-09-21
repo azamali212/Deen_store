@@ -13,3 +13,5 @@ require __DIR__.'/auth/admin.php';
 require __DIR__.'/auth/seller.php';
 require __DIR__.'/auth/customer.php';
 require __DIR__.'/auth/session.php';
+require __DIR__.'/user/profile.php';
+require __DIR__.'/user/admin.php';

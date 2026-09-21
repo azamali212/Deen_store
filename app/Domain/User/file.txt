@@ -81,9 +81,35 @@ app/
         ├── Contracts/                                   ⏳ EMPTY
         │   └── AvatarStorageInterface.php
         │
-        ├── Events/                                      ⏳ EMPTY (15 planned)
-        ├── Listeners/                                   ⏳ EMPTY (6 planned)
-        ├── Notifications/                                ⏳ EMPTY (4 planned)
+        ├── Events/                                      ✅ 14/15 (VerifyPhone-related event skipped, no PhoneVerificationService yet)
+        │   ├── UserUpdated, UserSuspended, UserActivated,
+        │   │   UserAccountDeleted, UserAccountRestored
+        │   ├── ProfileUpdated, ProfileCompleted (100% milestone)
+        │   ├── AvatarUploaded, AvatarDeleted
+        │   ├── AddressAdded, AddressUpdated, AddressDeleted, DefaultAddressChanged
+        │   └── PreferencesUpdated
+        │   All dispatched from inside their matching Action's execute()
+        │   (Action orchestrates: call Service, dispatch Event, return).
+        │
+        ├── Listeners/                                   ✅ 6/6 done
+        │   ├── RecalculateProfileCompletionListener       ✅ (listens to 3 events: ProfileUpdated/AvatarUploaded/AvatarDeleted)
+        │   ├── ProvisionDefaultPreferencesListener        ✅ (listens to AUTH domain's UserCreated — cross-domain)
+        │   ├── SendAccountSuspendedNotificationListener   ✅
+        │   ├── SendAccountActivatedNotificationListener   ✅
+        │   ├── SendProfileCompletedNotificationListener   ✅
+        │   └── LogAddressChangeListener                   ✅ (listens to 4 address events)
+        │   Registered manually in app/Providers/EventServiceProvider.php
+        │   ($listen array — this project doesn't use event auto-discovery).
+        │
+        ├── Notifications/                                ✅ 3/4 (built only what listeners above actually need)
+        │   ├── AccountSuspendedNotification               ✅
+        │   ├── AccountActivatedNotification                ✅
+        │   └── ProfileCompletedNotification                ✅
+        │
+        │   ⚠️ Also fixed a real gap while wiring this up: UserService::deleteUser()
+        │      now also calls terminateAllSessions() — a soft-deleted account was
+        │      NOT losing active sessions immediately, unlike suspend/ban which
+        │      already did. Same security guarantee now applies consistently.
         │
         ├── Exceptions/                                  ✅ mostly done (8 files)
         │   ├── UserNotFoundException.php                  ✅
@@ -126,3 +152,159 @@ app/
         │
         ├── Rules/                                        ⏳ EMPTY (3 planned)
         └── Policies/                                     ⏳ EMPTY (UserPolicy.php planned)
+
+
+========================================================================
+HTTP LAYER (app/Http/ — outside app/Domain/User/, same as Auth domain)
+========================================================================
+├── Requests/User/                                ✅ 8/8 done
+│   ├── UpdateProfileRequest, UploadAvatarRequest
+│   ├── StoreAddressRequest, UpdateAddressRequest
+│   ├── UpdatePreferencesRequest
+│   └── UpdateUserRequest, SuspendUserRequest, SearchUsersRequest
+│
+├── Controllers/User/                             ✅ 5/5 done
+│   ├── ProfileController        (self-service: show, update)
+│   ├── AvatarController         (self-service: store, destroy)
+│   ├── AddressController        (self-service: index, store, update, destroy, setDefault)
+│   ├── PreferenceController     (self-service: show, update)
+│   └── UserManagementController (ADMIN ONLY: index/search, show, update,
+│                                  destroy, restore, suspend, activate)
+│
+├── Resources/User/ (already built earlier, now actually wired in)
+│
+└── routes/user/profile.php, routes/user/admin.php  ✅ required from routes/api.php
+    - Self-service: auth:sanctum + active, no {user} param (always $request->user())
+    - Admin: auth:sanctum + active + role:super_admin|admin
+      (same rule as AuthPolicy::manageUsers() — kept consistent, no new Policy)
+
+⚠️ Gap found & fixed while wiring Controllers: blueprint's 18 planned Actions
+   never included a "list addresses" or "get preferences" read action (only
+   Add/Update/Delete/SetDefault existed for addresses). Added 2 more Actions
+   to keep Controllers from calling Services directly:
+   ListAddressesAction.php, GetPreferencesAction.php  → Actions now 19 total.
+
+
+========================================================================
+POLICIES, RULES, POSTMAN (this turn)
+========================================================================
+├── Policies/                                     ✅ 1 file (renamed from blueprint)
+│   └── UserProfilePolicy.php — NOT "UserPolicy.php" as originally planned.
+│       App\Models\User already has a registered policy (AuthPolicy, see
+│       AuthServiceProvider::$policies) — Laravel allows only ONE policy per
+│       model, so reusing "UserPolicy" would collide. Registered for
+│       UserProfile::class instead — governs viewing someone else's profile
+│       based on profile_visibility (public/private/followers). Not yet
+│       wired into a route (no "view another user's profile" endpoint
+│       exists yet) — ready for when that's built.
+│
+├── Rules/                                        ✅ 3/3 done
+│   ├── ValidPhoneNumber.php — thin wrapper around ValueObjects\PhoneNumber
+│   ├── ValidPostalCode.php  — thin wrapper around ValueObjects\PostalCode
+│   └── ValidUsername.php    — thin wrapper around ValueObjects\Username
+│   Each Rule re-uses its matching VO's own validation instead of
+│   duplicating the regex, so FormRequests now reject bad phone/postal
+│   code/username with a clean 422 instead of the request reaching the
+│   DTO layer and throwing. Wired into: StoreAddressRequest,
+│   UpdateAddressRequest, UpdateUserRequest (phone), UpdateProfileRequest
+│   (username, + added a real uniqueness check that was missing before).
+│
+└── postman/DeenStore-User-Domain.postman_collection.json
+    18 requests across 5 folders (Profile, Avatar, Addresses, Preferences,
+    Admin - User Management). Import directly into Postman. Needs a
+    Sanctum token pasted into the `token` / `admin_token` collection
+    variables first (login requires captcha_token, so that one step still
+    has to be done manually / through the app).
+
+──────────────────────────────────────────────────────────────────
+NOTE (Auth domain, 2026-09-21): captcha_token temporarily removed
+──────────────────────────────────────────────────────────────────
+Postman/API testing was blocked by `captcha_token` being hardcoded
+`required` on LoginRequest, CreateUserRequest, ForgotPasswordRequest,
+ResetPasswordRequest — even though .env has CAPTCHA_ENABLED=false.
+That config flag was never actually read anywhere (dead config).
+
+Removed for now, until the frontend (which will run the real
+Cloudflare Turnstile widget) is built:
+  - captcha_token rule dropped from all 4 FormRequests above.
+  - captchaToken property + fromArray() mapping dropped from
+    LoginDTO, CreateUserDTO, ResetPasswordDTO, ForgotPasswordDTO.
+  - AuthService::login() no longer calls CaptchaService->verify();
+    CaptchaService injection + unused imports (VerifyCaptchaDTO,
+    CaptchaService) removed from AuthService.
+
+NOT deleted — kept intact for later: the whole Domain/Captcha module
+(CaptchaService, CaptchaProviderInterface, CloudflareTurnstileProvider,
+VerifyCaptchaDTO, InvalidCaptchaException, VerifyCaptchaAction) and the
+turnstile config/.env keys. When frontend sends real Turnstile tokens,
+re-add `captcha_token` to the 4 FormRequests + DTOs and re-wire the
+verify() call in AuthService::login() (and add it to createUser/
+forgotPassword/resetPassword flows too if desired — those never called
+CaptchaService at all, even before this change).
+
+Above Postman collection note ("login requires captcha_token, so that
+one step still has to be done manually") is now stale — login no longer
+needs captcha_token.
+
+──────────────────────────────────────────────────────────────────
+NOTE (2026-09-21): Seller domain rolled back
+──────────────────────────────────────────────────────────────────
+Seller domain (seller_profiles migration, SellerProfile model,
+app/Domain/Seller/*, User::sellerProfile(), AppServiceProvider binding,
+CreateUserRequest's unique:seller_profiles rule, BaseAuthController's
+transactional register()+CreateSellerProfileAction wiring) was built
+then immediately removed on request — User domain (Profile CRUD etc.)
+isn't finished yet, Seller is out of scope for now.
+
+All code was reverted cleanly (brace-balanced, no dangling references).
+The deleted files themselves could not be rm'd from this session (no
+delete permission on the connected folder) — they were moved to
+_to_delete/ at the project root instead. Safe to delete that folder
+manually. Migration was never run (`php artisan migrate` was never
+confirmed), so the database was never touched — nothing to roll back
+there.
+
+The underlying bug this was meant to fix — CreateUserRequest validates
+store_name/business_name/business_type but nothing persists them — is
+still real and still open. Revisit when User domain work is done.
+
+──────────────────────────────────────────────────────────────────
+NOTE (Auth domain, 2026-09-21): customer self-registration fixed
+──────────────────────────────────────────────────────────────────
+Found: CustomerAuthController::canRegister() was false, AND
+routes/auth/customer.php had /register sitting INSIDE the
+auth:sanctum+role:customer middleware group — a brand-new visitor
+with no token could never reach it. Self-registration was completely
+broken/disabled, admin was the only way any account got created.
+
+Fixed with a NEW, separate path (did not touch the existing admin-only
+register()/CreateUserRequest flow):
+  - app/Http/Requests/Auth/RegisterCustomerRequest.php — public, no
+    `role` field at all (name/email/password/phone only).
+  - CreateUserDTO::forSelfRegistration() — new factory, role is a
+    hardcoded PHP argument the caller controls, never read from
+    request input. This is the actual security fix: a public endpoint
+    must never let the caller pick their own role.
+  - BaseAuthController::registerSelf() — new method + new abstract
+    selfRegistrationRole(): ?SystemRole (mirrors the existing
+    canRegister() pattern). Returns SystemRole::CUSTOMER for
+    CustomerAuthController, null (403) for Admin/Seller.
+  - routes/auth/customer.php — /register moved OUT of the auth
+    middleware group, points to registerSelf instead of register.
+
+Already worked without any change, confirmed by reading the code:
+  - UserCreated event already fires SendWelcomeEmailListener +
+    RequestEmailVerificationListener + ProvisionDefaultPreferencesListener
+    — a self-registered customer gets a welcome email, an email
+    verification request, and default preferences automatically.
+  - ProfileService::updateProfile() already does create-or-update
+    (upsert) — no separate "create profile" endpoint was ever needed,
+    the same PUT /profile endpoint creates the row on first call.
+
+NOT done (out of scope, noted only): SellerAuthController's
+self-registration is deliberately still null/disabled — Stage B
+(customer-initiated seller upgrade request -> admin approval -> bank
+details) is deferred per earlier decision. routes/auth/customer.php
+is also still missing verify-email/resend-verification/forgot-password/
+reset-password routes that admin.php has — not touched, flagging for
+later.

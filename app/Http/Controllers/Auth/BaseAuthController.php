@@ -35,8 +35,10 @@ use App\Domain\Auth\DTO\VerifyOtpDTO;
 use App\Domain\Auth\Enums\AuthPanel;
 use App\Domain\Auth\Services\DeviceFingerprintService;
 use App\Http\Controllers\Controller;
+use App\Domain\Permissions\Enums\SystemRole;
 use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\CreateUserRequest;
+use App\Http\Requests\Auth\RegisterCustomerRequest;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\LogoutRequest;
@@ -67,6 +69,13 @@ abstract class BaseAuthController extends Controller
     abstract protected function panel(): AuthPanel;
 
     abstract protected function canRegister(): bool;
+
+    /**
+     * The role a visitor gets when they self-register on this panel, or
+     * null when this panel does not allow public self-registration at
+     * all (admin accounts, for instance, are never self-created).
+     */
+    abstract protected function selfRegistrationRole(): ?SystemRole;
 
     // Login user and return auth result resource
     public function login(
@@ -367,6 +376,47 @@ abstract class BaseAuthController extends Controller
                     'name' => $request->user()->name,
                     'email' => $request->user()->email,
                 ],
+            ],
+        ], 201);
+    }
+
+    // Public, unauthenticated self-registration — a new visitor signing
+    // themselves up. The role is never read from the request; it comes
+    // from this panel's own selfRegistrationRole(), so a customer can
+    // never elevate themselves by tampering with the request body.
+    public function registerSelf(
+        RegisterCustomerRequest $request,
+        CreateUserAction $action,
+    ): JsonResponse {
+
+        $role = $this->selfRegistrationRole();
+
+        if ($role === null) {
+            abort(403, 'Self-registration is not allowed on this panel.');
+        }
+
+        $dto = CreateUserDTO::forSelfRegistration(
+            $request->validated(),
+            $role,
+            $request->ip(),
+            $request->userAgent(),
+        );
+
+        $user = $action->execute(
+            $dto,
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Account created successfully. Please check your email to verify your account.',
+            'data' => [
+                'user' => new UserResource(
+                    $user,
+                ),
+            ],
+            'meta' => [
+                'request_id' => (string) Str::ulid(),
+                'timestamp' => now()->toISOString(),
             ],
         ], 201);
     }

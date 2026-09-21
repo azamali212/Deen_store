@@ -54,6 +54,22 @@ use App\Domain\Auth\Listeners\SendTwoFactorDisabledNotificationListener;
 use App\Domain\Auth\Listeners\SendTwoFactorEnabledNotificationListener;
 use App\Domain\Auth\Listeners\SendVerificationEmailListener;
 use App\Domain\Auth\Listeners\SendWelcomeEmailListener;
+use App\Domain\User\Events\AddressAdded;
+use App\Domain\User\Events\AddressDeleted;
+use App\Domain\User\Events\AddressUpdated;
+use App\Domain\User\Events\AvatarDeleted;
+use App\Domain\User\Events\AvatarUploaded;
+use App\Domain\User\Events\DefaultAddressChanged;
+use App\Domain\User\Events\ProfileCompleted;
+use App\Domain\User\Events\ProfileUpdated;
+use App\Domain\User\Events\UserActivated;
+use App\Domain\User\Events\UserSuspended;
+use App\Domain\User\Listeners\LogAddressChangeListener;
+use App\Domain\User\Listeners\ProvisionDefaultPreferencesListener;
+use App\Domain\User\Listeners\RecalculateProfileCompletionListener;
+use App\Domain\User\Listeners\SendAccountActivatedNotificationListener;
+use App\Domain\User\Listeners\SendAccountSuspendedNotificationListener;
+use App\Domain\User\Listeners\SendProfileCompletedNotificationListener;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 
 final class EventServiceProvider extends ServiceProvider
@@ -79,6 +95,7 @@ final class EventServiceProvider extends ServiceProvider
         UserCreated::class => [
             SendWelcomeEmailListener::class,
             RequestEmailVerificationListener::class,
+            ProvisionDefaultPreferencesListener::class,
         ],
 
         EmailVerificationRequested::class => [
@@ -165,6 +182,47 @@ final class EventServiceProvider extends ServiceProvider
 
             SendRecoveryCodesRegeneratedNotificationListener::class,
 
+        ],
+
+        // User domain
+        ProfileUpdated::class => [
+            RecalculateProfileCompletionListener::class,
+        ],
+
+        AvatarUploaded::class => [
+            RecalculateProfileCompletionListener::class,
+        ],
+
+        AvatarDeleted::class => [
+            RecalculateProfileCompletionListener::class,
+        ],
+
+        ProfileCompleted::class => [
+            SendProfileCompletedNotificationListener::class,
+        ],
+
+        UserSuspended::class => [
+            SendAccountSuspendedNotificationListener::class,
+        ],
+
+        UserActivated::class => [
+            SendAccountActivatedNotificationListener::class,
+        ],
+
+        AddressAdded::class => [
+            LogAddressChangeListener::class,
+        ],
+
+        AddressUpdated::class => [
+            LogAddressChangeListener::class,
+        ],
+
+        AddressDeleted::class => [
+            LogAddressChangeListener::class,
+        ],
+
+        DefaultAddressChanged::class => [
+            LogAddressChangeListener::class,
         ],
     ];
 

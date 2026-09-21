@@ -11,7 +11,6 @@ final readonly class ResetPasswordDTO
         public string $password,
         public ?string $ipAddress,
         public ?string $userAgent,
-        public string $captchaToken,
     ) {}
 
     public static function fromArray(array $data, ?string $ipAddress = null, ?string $userAgent = null): self
@@ -21,7 +20,6 @@ final readonly class ResetPasswordDTO
             password: (string) $data['password'],
             ipAddress: $ipAddress,
             userAgent: $userAgent,
-            captchaToken: $data['captcha_token'],
         );
     }
 }

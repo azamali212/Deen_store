@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\User\Actions;
 
 use App\Domain\User\DTO\UpdatePreferenceDTO;
+use App\Domain\User\Events\PreferencesUpdated;
 use App\Domain\User\Services\PreferenceService;
 use App\Models\UserPreference;
 
@@ -16,6 +17,10 @@ final readonly class UpdatePreferencesAction
 
     public function execute(int $userId, UpdatePreferenceDTO $dto): UserPreference
     {
-        return $this->preferenceService->savePreferences($userId, $dto);
+        $preferences = $this->preferenceService->savePreferences($userId, $dto);
+
+        event(new PreferencesUpdated($preferences));
+
+        return $preferences;
     }
 }

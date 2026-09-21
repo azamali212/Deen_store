@@ -33,7 +33,6 @@ final class LoginRequest extends FormRequest
             'provider' => ['nullable', 'string'],
 
             'remember' => ['nullable', 'boolean'],
-            'captcha_token' => ['required', 'string'],
 
         ];
     }

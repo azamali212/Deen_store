@@ -56,6 +56,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | The customer-facing frontend app's base URL. Email templates (email
+    | verification, password reset) build deep links into it, e.g.
+    | {frontend_url}/verify-email?token=... This is deliberately separate
+    | from 'url' above, which is this API's own address.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

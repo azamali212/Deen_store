@@ -24,10 +24,6 @@ final class ForgotPasswordRequest extends FormRequest
                 'required',
                 'email:rfc,dns',
             ],
-            'captcha_token' => [
-                'required',
-                'string',
-            ],
 
         ];
     }
