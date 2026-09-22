@@ -10,5 +10,6 @@ enum OtpPurpose: string
     case ADMIN_LOGIN = 'admin_login';
     case PASSWORD_RESET = 'password_reset';
     case EMAIL_VERIFICATION = 'email_verification';
+    case PHONE_VERIFICATION = 'phone_verification';
     case STEP_UP_AUTH = 'step_up_auth';
 }

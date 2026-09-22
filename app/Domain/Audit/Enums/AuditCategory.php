@@ -16,4 +16,5 @@ enum AuditCategory: string
     case PAYMENT = 'payment';
     case INVENTORY = 'inventory';
     case SYSTEM = 'system';
+    case MODERATION = 'moderation';
 }

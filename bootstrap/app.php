@@ -1,5 +1,8 @@
 <?php
 
+use App\Domain\Audit\Exceptions\AiSummaryUnavailableException;
+use App\Domain\Moderation\Exceptions\ModerationFlagAlreadyResolvedException;
+use App\Domain\Moderation\Exceptions\ProfileContentRejectedException;
 use App\Domain\Auth\Exceptions\AccountLockedException;
 use App\Domain\Auth\Exceptions\TooManyLoginAttemptsException;
 use App\Http\Middleware\EnsureAccountIsActive;
@@ -66,6 +69,38 @@ return Application::configure(basePath: dirname(__DIR__))
                     'retry_after' => $e->retryAfter,
                     'locked_until' => $e->lockedUntil,
                 ], 423);
+            },
+        );
+
+        $exceptions->render(
+            function (AiSummaryUnavailableException $e) {
+                $status = str_contains($e->getMessage(), 'no audit activity')
+                    ? 404
+                    : 503;
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], $status);
+            },
+        );
+
+        $exceptions->render(
+            function (ModerationFlagAlreadyResolvedException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
+            },
+        );
+
+        $exceptions->render(
+            function (ProfileContentRejectedException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'flagged_fields' => $e->context()['flagged_fields'] ?? [],
+                ], 422);
             },
         );
     })->create();

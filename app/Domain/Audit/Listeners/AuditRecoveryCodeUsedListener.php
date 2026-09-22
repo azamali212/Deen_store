@@ -4,22 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\Audit\Listeners;
 
-use App\Domain\Audit\Actions\CreateAuditLogAction;
 use App\Domain\Audit\DTO\AuditContextDTO;
 use App\Domain\Audit\DTO\CreateAuditLogDTO;
 use App\Domain\Audit\Enums\AuditAction;
 use App\Domain\Audit\Enums\AuditCategory;
 use App\Domain\Audit\Enums\AuditSeverity;
 use App\Domain\Audit\Enums\AuditStatus;
+use App\Domain\Audit\Jobs\WriteAuditLogJob;
 use App\Domain\Auth\Events\RecoveryCodeUsed;
 use App\Models\User;
 
-final readonly class AuditRecoveryCodeUsedListener
+final class AuditRecoveryCodeUsedListener
 {
-    public function __construct(
-        private CreateAuditLogAction $action,
-    ) {}
-
     public function handle(
         RecoveryCodeUsed $event,
     ): void {
@@ -30,7 +26,7 @@ final readonly class AuditRecoveryCodeUsedListener
                 request(),
             );
 
-        $this->action->execute(
+        WriteAuditLogJob::dispatch(
             new CreateAuditLogDTO(
                 action: AuditAction::OTHER_SESSIONS_TERMINATED,
                 category: AuditCategory::SECURITY,

@@ -125,6 +125,9 @@ abstract class BaseAuthController extends Controller
         $dto = LogoutDTO::fromArray(
             $request->validated(),
             (string) $request->user()->id,
+            $this->panel(),
+            $request->ip(),
+            $request->userAgent(),
         );
         $action->execute(
             $request->user(),

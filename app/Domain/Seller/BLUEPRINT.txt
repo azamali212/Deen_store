@@ -1,0 +1,257 @@
+================================================================================
+SELLER ONBOARDING MODULE — PROTOTYPE / BLUEPRINT (not built yet)
+================================================================================
+Status: PLANNING ONLY. Nothing in this file exists as code yet — this is the
+agreed structure before we start writing files. Confirmed decisions so far:
+  - Documents required: cnic_front, cnic_back, business_license,
+    tax_certificate, bank_statement (5 types)
+  - Rejection flow: user edits the SAME application and resubmits (status
+    goes rejected -> pending again), not a brand-new application row.
+  - Bank account number must NOT be stored plaintext (encrypted cast, or
+    last-4-digits only) — enterprise/security requirement, decided upfront.
+
+
+--------------------------------------------------------------------------------
+1. WORKFLOW DIAGRAM (full lifecycle, both actors)
+--------------------------------------------------------------------------------
+
+  CUSTOMER                         SYSTEM                          ADMIN
+  ────────                         ──────                          ─────
+
+  [Logged-in customer,
+   already has a profile]
+        │
+        │ 1) Click "Start Business"
+        ▼
+  POST /seller/applications
+  { store_name, business_name,
+    business_type }
+        │
+        ▼
+  SubmitSellerApplicationAction
+        │
+        ├─► seller_applications row created (status = pending)
+        │
+        └─► event: SellerApplicationSubmitted
+                    │
+                    ▼
+            NotifyAdminsOfNewApplicationListener
+                    │
+                    ▼
+            SellerApplicationSubmittedNotification ───────────────► [Admin inbox/email]
+        │
+        │ 2) Upload documents (one call per type,
+        │    repeat 5x: cnic_front, cnic_back,
+        │    business_license, tax_certificate,
+        │    bank_statement)
+        ▼
+  POST /seller/applications/{id}/documents
+  { document_type, file }
+        │
+        ▼
+  UploadApplicationDocumentAction
+        │
+        └─► seller_application_documents row
+            (updateOrCreate per document_type —
+             re-uploading the same type replaces it,
+             never piles up duplicates)
+        │
+        │ 3) Waits (checks status or waits for email)
+        │                                                              │
+        │                                                              ▼
+        │                                                  3) Admin reviews:
+        │                                                     GET /admin/seller-applications
+        │                                                     GET /admin/seller-applications/{id}
+        │                                                     (business info + all 5 document links)
+        │                                                              │
+        │                                                              ▼
+        │                                                  POST /admin/seller-applications/{id}/review
+        │                                                  { decision: approve | reject, reason? }
+        │                                                              │
+        │                                        ┌─────────────────────┴─────────────────────┐
+        │                                        ▼                                           ▼
+        │                           ApproveSellerApplicationAction            RejectSellerApplicationAction
+        │                                        │                                           │
+        │                                        ├─► status = approved                       ├─► status = rejected
+        │                                        ├─► seller_profiles row CREATED              ├─► rejection_reason saved
+        │                                        ├─► user gets 'seller' role (spatie)         │
+        │                                        │                                            │
+        │                         event: SellerApplicationApproved              event: SellerApplicationRejected
+        │                                        │                                            │
+        │                     ┌──────────────────┴──────────────┐                             │
+        │                     ▼                                 ▼                             ▼
+        │      UpgradeUserRoleOnApprovalListener      NotifyUserOfApprovalListener   NotifyUserOfRejectionListener
+        │                     │                                 │                             │
+        │            (assignRole('seller'))          SellerApplicationApproved       SellerApplicationRejected
+        │                                             Notification                    Notification
+        │                                                       │                             │
+        │  ◄────────────────────────────────────────────────────┘                             │
+        │    "Your business is approved!"                                                      │
+        │  ◄─────────────────────────────────────────────────────────────────────────────────────┘
+        │    "Your application was rejected: {reason}"
+        │
+        ▼
+  ┌─────────────────────────┐             ┌──────────────────────────────────────┐
+  │ IF APPROVED              │             │ IF REJECTED                          │
+  │ 4) Complete business      │            │ 4) Fix the flagged document(s),       │
+  │    profile:                │           │    re-upload, then resubmit:          │
+  │ PUT /seller/profile        │           │ PATCH /seller/applications/{id}       │
+  │ { logo, description,       │           │ (status: rejected -> pending again,   │
+  │   bank_account_title,      │           │  admin re-notified — loops back       │
+  │   bank_name,                │          │  to step 3)                           │
+  │   bank_account_last4,       │          └──────────────────────────────────────┘
+  │   business_address, ... }   │
+  └─────────────────────────┘
+        │
+        ▼
+  UpdateSellerProfileAction
+        │
+        └─► seller_profiles row updated
+        │
+        ▼
+  [Business is live — seller can now list products (future: Catalog domain)]
+
+
+--------------------------------------------------------------------------------
+2. DATABASE TABLES
+--------------------------------------------------------------------------------
+
+seller_applications
+  id, user_id (FK, indexed), store_name, business_name, business_type,
+  status (pending/under_review/approved/rejected), rejection_reason (nullable),
+  reviewed_by (FK users, nullable), reviewed_at (nullable), timestamps
+  UNIQUE(user_id)        -- one active application per user at a time
+  UNIQUE(store_name)     -- no two sellers share a public store name
+
+seller_application_documents
+  id, seller_application_id (FK), document_type (enum string), file_path,
+  uploaded_at, timestamps
+  UNIQUE(seller_application_id, document_type)  -- re-upload replaces, never duplicates
+
+seller_profiles           -- created ONLY on approval, this is the LIVE business
+  id, user_id (FK, unique), seller_application_id (FK, reference back to how
+  they got approved), store_name, business_name, business_type, logo_path,
+  description, business_address, bank_account_title, bank_name,
+  bank_account_last4 (string(4) — NEVER the full number), status
+  (active/suspended), timestamps
+
+
+--------------------------------------------------------------------------------
+3. FILE TREE — everything this module will contain, layer by layer
+--------------------------------------------------------------------------------
+
+database/migrations/
+├── xxxx_create_seller_applications_table.php
+├── xxxx_create_seller_application_documents_table.php
+└── xxxx_create_seller_profiles_table.php
+
+app/Models/
+├── SellerApplication.php          -- belongsTo User, hasMany documents
+├── SellerApplicationDocument.php  -- belongsTo SellerApplication
+└── SellerProfile.php              -- belongsTo User, belongsTo SellerApplication
+
+app/Domain/Seller/
+├── Enums/
+│   ├── SellerApplicationStatus.php   (pending, under_review, approved, rejected)
+│   └── SellerDocumentType.php        (cnic_front, cnic_back, business_license,
+│                                       tax_certificate, bank_statement)
+│
+├── Exceptions/
+│   ├── SellerApplicationAlreadyExistsException.php   -- user already has one pending/approved
+│   ├── SellerApplicationNotFoundException.php
+│   ├── InvalidApplicationStatusTransitionException.php -- e.g. can't review twice
+│   ├── DuplicateStoreNameException.php
+│   ├── MissingRequiredDocumentsException.php          -- can't submit for review w/o all 5
+│   └── SellerProfileNotFoundException.php
+│
+├── DTO/
+│   ├── SubmitSellerApplicationDTO.php
+│   ├── UploadApplicationDocumentDTO.php
+│   ├── ReviewSellerApplicationDTO.php     (decision, reason, reviewerId)
+│   ├── ResubmitSellerApplicationDTO.php
+│   └── UpdateSellerProfileDTO.php
+│
+├── Repositories/
+│   ├── Contracts/
+│   │   ├── SellerApplicationRepositoryInterface.php
+│   │   └── SellerProfileRepositoryInterface.php
+│   ├── DTO/  (CreateSellerApplicationData, CreateSellerProfileData, ...)
+│   ├── SellerApplicationRepository.php
+│   └── SellerProfileRepository.php
+│
+├── Contracts/
+│   └── DocumentStorageInterface.php   -- swappable: LocalDocumentStorage now,
+│                                          S3DocumentStorage later (mirrors
+│                                          AvatarStorageInterface pattern)
+├── Support/
+│   └── LocalDocumentStorage.php
+│
+├── Services/
+│   ├── SellerApplicationService.php   -- submit, resubmit, review (approve/reject)
+│   ├── SellerDocumentService.php      -- upload/replace documents, checks all 5 present
+│   └── SellerProfileService.php       -- post-approval profile updates
+│
+├── Actions/
+│   ├── SubmitSellerApplicationAction.php
+│   ├── UploadApplicationDocumentAction.php
+│   ├── ResubmitSellerApplicationAction.php
+│   ├── ApproveSellerApplicationAction.php
+│   ├── RejectSellerApplicationAction.php
+│   ├── ListPendingApplicationsAction.php   (admin)
+│   ├── GetApplicationDetailAction.php      (admin — shows docs)
+│   └── UpdateSellerProfileAction.php
+│
+├── Events/
+│   ├── SellerApplicationSubmitted.php
+│   ├── SellerApplicationResubmitted.php
+│   ├── SellerApplicationApproved.php
+│   ├── SellerApplicationRejected.php
+│   └── SellerProfileUpdated.php
+│
+├── Listeners/
+│   ├── NotifyAdminsOfNewApplicationListener.php     (Submitted + Resubmitted)
+│   ├── UpgradeUserRoleOnApprovalListener.php         (Approved)
+│   ├── NotifyUserOfApprovalListener.php              (Approved)
+│   └── NotifyUserOfRejectionListener.php             (Rejected)
+│
+├── Notifications/
+│   ├── SellerApplicationSubmittedNotification.php    -- to admins
+│   ├── SellerApplicationApprovedNotification.php     -- to user
+│   └── SellerApplicationRejectedNotification.php      -- to user, includes reason
+│
+└── Policies/
+    └── SellerApplicationPolicy.php   -- view/review only for admin roles
+
+app/Http/Requests/Seller/
+├── SubmitSellerApplicationRequest.php
+├── UploadApplicationDocumentRequest.php   (file + document_type, mimes:pdf,jpg,png)
+├── ResubmitSellerApplicationRequest.php
+├── ReviewSellerApplicationRequest.php     (admin)
+└── UpdateSellerProfileRequest.php
+
+app/Http/Controllers/Seller/
+├── SellerApplicationController.php    -- customer: submit, upload docs, resubmit, check status
+├── AdminSellerApplicationController.php -- admin: list, view detail, approve/reject
+└── SellerProfileController.php        -- approved seller: manage own business profile
+
+app/Http/Resources/Seller/
+├── SellerApplicationResource.php
+├── SellerApplicationCollection.php
+├── SellerApplicationDocumentResource.php
+└── SellerProfileResource.php
+
+routes/seller/
+├── application.php   -- auth:sanctum + role:customer
+├── admin.php         -- auth:sanctum + role:super_admin|admin
+└── profile.php       -- auth:sanctum + role:seller
+
+
+--------------------------------------------------------------------------------
+4. OPEN QUESTIONS FOR NEXT STEP (before writing code)
+--------------------------------------------------------------------------------
+- Document storage: local disk (like avatars) for now, or something else?
+- Should "under_review" be a real distinct status (admin explicitly opens the
+  application = locks it from other admins reviewing simultaneously), or
+  skip it and go straight pending -> approved/rejected for simplicity now?
+- File size/type limits for documents (mirroring avatar's 5MB image-only,
+  but these are ID/legal docs — probably need PDF support too)?

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\User\AddressController;
 use App\Http\Controllers\User\AvatarController;
+use App\Http\Controllers\User\PhoneVerificationController;
 use App\Http\Controllers\User\PreferenceController;
 use App\Http\Controllers\User\ProfileController;
 use Illuminate\Support\Facades\Route;
@@ -46,5 +47,13 @@ Route::middleware([
 
                 Route::get('/', [PreferenceController::class, 'show'])->name('show');
                 Route::put('/', [PreferenceController::class, 'update'])->name('update');
+            });
+
+        Route::prefix('phone')
+            ->name('phone.')
+            ->group(function (): void {
+
+                Route::post('send-code', [PhoneVerificationController::class, 'sendCode'])->name('send-code');
+                Route::post('verify', [PhoneVerificationController::class, 'verify'])->name('verify');
             });
     });

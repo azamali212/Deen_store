@@ -4,22 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\Audit\Listeners;
 
-use App\Domain\Audit\Actions\CreateAuditLogAction;
 use App\Domain\Audit\DTO\AuditContextDTO;
 use App\Domain\Audit\DTO\CreateAuditLogDTO;
 use App\Domain\Audit\Enums\AuditAction;
 use App\Domain\Audit\Enums\AuditCategory;
 use App\Domain\Audit\Enums\AuditSeverity;
 use App\Domain\Audit\Enums\AuditStatus;
+use App\Domain\Audit\Jobs\WriteAuditLogJob;
 use App\Domain\Auth\Events\TwoFactorEnabled;
 use App\Models\User;
 
-final readonly class AuditTwoFactorEnabledListener
+final class AuditTwoFactorEnabledListener
 {
-    public function __construct(
-        private CreateAuditLogAction $action,
-    ) {}
-
     public function handle(
         TwoFactorEnabled $event,
     ): void {
@@ -30,7 +26,7 @@ final readonly class AuditTwoFactorEnabledListener
                 request(),
             );
 
-        $this->action->execute(
+        WriteAuditLogJob::dispatch(
             new CreateAuditLogDTO(
                 action: AuditAction::TWO_FACTOR_ENABLED,
                 category: AuditCategory::SECURITY,

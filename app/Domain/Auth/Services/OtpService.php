@@ -7,7 +7,6 @@ namespace App\Domain\Auth\Services;
 use App\Domain\Auth\Enums\OtpPurpose;
 use App\Domain\Auth\Events\Data\OtpEventData;
 use App\Domain\Auth\Events\OtpSent;
-use App\Domain\Auth\Notifications\LoginOtpNotification;
 use App\Domain\Auth\Repositories\Contracts\AuthRepositoryInterface;
 use App\Domain\Auth\Repositories\DTO\CreateOtpData;
 use App\Models\LoginOtp;
@@ -39,7 +38,8 @@ final readonly class OtpService
 
     public function create(
         User $user,
-        OtpPurpose $purpose
+        OtpPurpose $purpose,
+        ?string $identifier = null,
     ): LoginOtp {
 
         if (! $this->canRequestOtp(
@@ -59,11 +59,17 @@ final readonly class OtpService
 
         $plainOtp = $this->generateOtp();
 
+        // Falls back to email for every existing purpose (login, password
+        // reset, ...) so those callers are unaffected. Only a caller that
+        // explicitly passes $identifier (phone verification does) changes
+        // where the OTP is tied to and how it's delivered below.
+        $identifier ??= $user->email;
+
         $otp = $this->repository->createOtp(
 
             new CreateOtpData(
 
-                identifier: $user->email,
+                identifier: $identifier,
 
                 codeHash: Hash::make(
                     $plainOtp
@@ -80,18 +86,17 @@ final readonly class OtpService
             )
 
         );
-        $user->notify(
-            new LoginOtpNotification(
-                otp: $plainOtp,
-                purpose: $purpose->value,
-                identifier: $user->email,
-            )
-        );
+
+        // Delivery happens in SendOtpNotificationListener (triggered by the
+        // OtpSent event below) — not here — so there is exactly ONE place
+        // that sends/logs an OTP, not two. (Previously this method also
+        // called $user->notify() directly, which meant every OTP was
+        // delivered twice: once here, once via the listener.)
         event(
             new OtpSent(
                 new OtpEventData(
                     userId: (string) $user->id,
-                    identifier: $user->email,
+                    identifier: $identifier,
                     code: $plainOtp,
                     purpose: $purpose,
                     ipAddress: request()->ip(),

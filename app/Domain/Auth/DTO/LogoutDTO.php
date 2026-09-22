@@ -4,24 +4,36 @@ declare(strict_types=1);
 
 namespace App\Domain\Auth\DTO;
 
+use App\Domain\Auth\Enums\AuthPanel;
+
 final readonly class LogoutDTO
 {
     public function __construct(
         public string $userId,
+        public AuthPanel $panel,
         public ?string $tokenId = null,
         public bool $logoutAllDevices = false,
         public ?string $ipAddress = null,
         public ?string $userAgent = null,
     ) {}
 
-    public static function fromArray(array $data, string $userId): self
-    {
+    // ipAddress/userAgent come from the controller's $request->ip() /
+    // $request->userAgent() (never from client-submitted body fields —
+    // LogoutRequest doesn't validate any such fields, on purpose).
+    public static function fromArray(
+        array $data,
+        string $userId,
+        AuthPanel $panel,
+        ?string $ipAddress = null,
+        ?string $userAgent = null,
+    ): self {
         return new self(
             userId: $userId,
+            panel: $panel,
             tokenId: self::nullableString($data, 'token_id'),
             logoutAllDevices: (bool) ($data['logout_all_devices'] ?? false),
-            ipAddress: self::nullableString($data, 'ip_address'),
-            userAgent: self::nullableString($data, 'user_agent'),
+            ipAddress: $ipAddress,
+            userAgent: $userAgent,
         );
     }
 

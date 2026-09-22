@@ -5,12 +5,29 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Audit\Listeners\AuditAccountLockedListener;
+use App\Domain\Audit\Listeners\AuditAccountRestoredListener;
 use App\Domain\Audit\Listeners\AuditAccountUnlockedListener;
 use App\Domain\Audit\Listeners\AuditRecoveryCodesRegeneratedListener;
 use App\Domain\Audit\Listeners\AuditRecoveryCodeUsedListener;
+use App\Domain\Audit\Listeners\AuditUserLoggedOutListener;
+use App\Domain\Audit\Listeners\AuditUserSuspendedListener;
+use App\Domain\Audit\Listeners\AuditTwoFactorConfirmedListener;
 use App\Domain\Audit\Listeners\AuditTwoFactorDisabledListener;
 use App\Domain\Audit\Listeners\AuditTwoFactorEnabledListener;
 use App\Domain\Audit\Listeners\AuditTwoFactorVerifiedListener;
+use App\Domain\Audit\Listeners\AuditUserActivatedListener;
+use App\Domain\Audit\Listeners\AuditUserCreatedListener;
+use App\Domain\Audit\Listeners\AuditAccountDeletedListener;
+use App\Domain\Audit\Listeners\AuditAddressChangeListener;
+use App\Domain\Audit\Listeners\AuditAvatarDeletedListener;
+use App\Domain\Audit\Listeners\AuditAvatarUploadedListener;
+use App\Domain\Audit\Listeners\AuditPreferencesUpdatedListener;
+use App\Domain\Audit\Listeners\AuditPhoneVerifiedListener;
+use App\Domain\Audit\Listeners\AuditProfileUpdatedListener;
+use App\Domain\Audit\Listeners\AuditProfileFlaggedListener;
+use App\Domain\Audit\Listeners\AuditModerationFlagResolvedListener;
+use App\Domain\Audit\Listeners\AuditProfileContentBlockedListener;
+use App\Domain\Audit\Listeners\AuditUserUpdatedListener;
 use App\Domain\Auth\Events\AccountLocked;
 use App\Domain\Auth\Events\AccountUnlocked;
 use App\Domain\Auth\Events\EmailVerificationRequested;
@@ -27,11 +44,13 @@ use App\Domain\Auth\Events\RecoveryCodeUsed;
 use App\Domain\Auth\Events\SessionTerminated;
 use App\Domain\Auth\Events\SuspiciousLoginDetected;
 use App\Domain\Auth\Events\TrustedDeviceRevoked;
+use App\Domain\Auth\Events\TwoFactorConfirmed;
 use App\Domain\Auth\Events\TwoFactorDisabled;
 use App\Domain\Auth\Events\TwoFactorEnabled;
 use App\Domain\Auth\Events\TwoFactorVerified;
 use App\Domain\Auth\Events\UserCreated;
 use App\Domain\Auth\Events\UserLoggedIn;
+use App\Domain\Auth\Events\UserLoggedOut;
 use App\Domain\Auth\Listeners\LogAccountLockedListener;
 use App\Domain\Auth\Listeners\LogAccountUnlockedListener;
 use App\Domain\Auth\Listeners\LogFailedLoginListener;
@@ -61,7 +80,15 @@ use App\Domain\User\Events\AvatarDeleted;
 use App\Domain\User\Events\AvatarUploaded;
 use App\Domain\User\Events\DefaultAddressChanged;
 use App\Domain\User\Events\ProfileCompleted;
+use App\Domain\User\Events\PreferencesUpdated;
+use App\Domain\User\Events\PhoneVerified;
 use App\Domain\User\Events\ProfileUpdated;
+use App\Domain\Moderation\Events\ProfileFlaggedForReview;
+use App\Domain\Moderation\Events\ModerationFlagResolved;
+use App\Domain\Moderation\Events\ProfileContentBlocked;
+use App\Domain\User\Events\UserAccountDeleted;
+use App\Domain\User\Events\UserAccountRestored;
+use App\Domain\User\Events\UserUpdated;
 use App\Domain\User\Events\UserActivated;
 use App\Domain\User\Events\UserSuspended;
 use App\Domain\User\Listeners\LogAddressChangeListener;
@@ -80,6 +107,10 @@ final class EventServiceProvider extends ServiceProvider
             LogSuccessfulLoginListener::class,
         ],
 
+        UserLoggedOut::class => [
+            AuditUserLoggedOutListener::class,
+        ],
+
         LoginFailed::class => [
             LogFailedLoginListener::class,
         ],
@@ -93,9 +124,14 @@ final class EventServiceProvider extends ServiceProvider
         ],
 
         UserCreated::class => [
+            AuditUserCreatedListener::class,
             SendWelcomeEmailListener::class,
             RequestEmailVerificationListener::class,
             ProvisionDefaultPreferencesListener::class,
+        ],
+
+        TwoFactorConfirmed::class => [
+            AuditTwoFactorConfirmedListener::class,
         ],
 
         EmailVerificationRequested::class => [
@@ -186,15 +222,42 @@ final class EventServiceProvider extends ServiceProvider
 
         // User domain
         ProfileUpdated::class => [
+            AuditProfileUpdatedListener::class,
             RecalculateProfileCompletionListener::class,
         ],
 
         AvatarUploaded::class => [
+            AuditAvatarUploadedListener::class,
             RecalculateProfileCompletionListener::class,
         ],
 
         AvatarDeleted::class => [
+            AuditAvatarDeletedListener::class,
             RecalculateProfileCompletionListener::class,
+        ],
+
+        ProfileFlaggedForReview::class => [
+            AuditProfileFlaggedListener::class,
+        ],
+
+        ModerationFlagResolved::class => [
+            AuditModerationFlagResolvedListener::class,
+        ],
+
+        ProfileContentBlocked::class => [
+            AuditProfileContentBlockedListener::class,
+        ],
+
+        UserUpdated::class => [
+            AuditUserUpdatedListener::class,
+        ],
+
+        PreferencesUpdated::class => [
+            AuditPreferencesUpdatedListener::class,
+        ],
+
+        PhoneVerified::class => [
+            AuditPhoneVerifiedListener::class,
         ],
 
         ProfileCompleted::class => [
@@ -202,27 +265,41 @@ final class EventServiceProvider extends ServiceProvider
         ],
 
         UserSuspended::class => [
+            AuditUserSuspendedListener::class,
             SendAccountSuspendedNotificationListener::class,
         ],
 
         UserActivated::class => [
+            AuditUserActivatedListener::class,
             SendAccountActivatedNotificationListener::class,
+        ],
+
+        UserAccountDeleted::class => [
+            AuditAccountDeletedListener::class,
+        ],
+
+        UserAccountRestored::class => [
+            AuditAccountRestoredListener::class,
         ],
 
         AddressAdded::class => [
             LogAddressChangeListener::class,
+            AuditAddressChangeListener::class,
         ],
 
         AddressUpdated::class => [
             LogAddressChangeListener::class,
+            AuditAddressChangeListener::class,
         ],
 
         AddressDeleted::class => [
             LogAddressChangeListener::class,
+            AuditAddressChangeListener::class,
         ],
 
         DefaultAddressChanged::class => [
             LogAddressChangeListener::class,
+            AuditAddressChangeListener::class,
         ],
     ];
 

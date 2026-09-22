@@ -23,11 +23,23 @@ enum AuditAction: string
     case ACCOUNT_UNLOCKED = 'auth.account.unlocked';
     case TWO_FACTOR_ENABLED = 'auth.two_factor.enabled';
     case TWO_FACTOR_DISABLED = 'auth.two_factor.disabled';
+    case TWO_FACTOR_CONFIRMED = 'auth.two_factor.confirmed';
     case TWO_FACTOR_CHALLENGED = 'auth.two_factor.challenged';
     case USER_CREATED = 'user.created';
     case USER_UPDATED = 'user.updated';
+    case PROFILE_UPDATED = 'user.profile.updated';
+    case AVATAR_UPLOADED = 'user.avatar.uploaded';
+    case AVATAR_DELETED = 'user.avatar.deleted';
+    case PREFERENCES_UPDATED = 'user.preferences.updated';
+    case ADDRESS_ADDED = 'user.address.added';
+    case ADDRESS_UPDATED = 'user.address.updated';
+    case ADDRESS_DELETED = 'user.address.deleted';
+    case ADDRESS_DEFAULT_CHANGED = 'user.address.default_changed';
+    case PHONE_VERIFIED = 'user.phone.verified';
     case USER_ACTIVATED = 'user.activated';
     case USER_DEACTIVATED = 'user.deactivated';
+    case ACCOUNT_DELETED = 'user.account.deleted';
+    case ACCOUNT_RESTORED = 'user.account.restored';
     case ROLE_ASSIGNED = 'permission.role.assigned';
     case ROLE_REMOVED = 'permission.role.removed';
     case PERMISSION_GRANTED = 'permission.granted';
@@ -44,4 +56,7 @@ enum AuditAction: string
     case RECOVERY_CODE_USED = 'auth.recovery_code.used';
     case RECOVERY_CODES_GENERATED = 'auth.recovery_codes.generated';
     case RECOVERY_CODES_REGENERATED = 'auth.recovery_codes.regenerated';
+    case PROFILE_FLAGGED = 'moderation.profile.flagged';
+    case MODERATION_FLAG_RESOLVED = 'moderation.flag.resolved';
+    case PROFILE_CONTENT_BLOCKED = 'moderation.profile.content_blocked';
 }

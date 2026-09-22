@@ -17,14 +17,17 @@ final readonly class VerifyPhoneDTO
         public string $code,
     ) {}
 
+    // userId is a required, explicit argument — never read from $data.
+    // This is a self-service endpoint; the caller must pass
+    // $request->user()->id, not trust a client-supplied user_id (the same
+    // rule that keeps self-registration from letting a caller pick its
+    // own role — see CreateUserDTO::forSelfRegistration()).
     public static function fromArray(
         array $data,
+        int $userId,
     ): self {
         return new self(
-            userId: self::requiredInt(
-                $data,
-                'user_id',
-            ),
+            userId: $userId,
             phone: PhoneNumber::from(
                 self::requiredString(
                     $data,
