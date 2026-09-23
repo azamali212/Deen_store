@@ -27,7 +27,7 @@ final class UserProfilePolicy
             return true;
         }
 
-        if ($viewer->hasAnyRole(['super_admin', 'admin'])) {
+        if ($viewer->hasAnyRole(['super_admin', 'platform_admin'])) {
             return true;
         }
 

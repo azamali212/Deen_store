@@ -6,11 +6,14 @@ namespace App\Models;
 
 use App\Domain\Moderation\Enums\ModerationSeverity;
 use App\Domain\Moderation\Enums\ModerationStatus;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 final class ModerationFlag extends Model
 {
+    use HasFactory;
+
     protected $table = 'profile_moderation_flags';
 
     protected $fillable = [

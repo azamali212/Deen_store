@@ -10,6 +10,7 @@ use App\Domain\Auth\Actions\ForgotPasswordAction;
 use App\Domain\Auth\Actions\ListSessionsAction;
 use App\Domain\Auth\Actions\ListTrustedDevicesAction;
 use App\Domain\Auth\Actions\LoginUserAction;
+use App\Domain\Auth\Actions\LoginWithGoogleAction;
 use App\Domain\Auth\Actions\LogoutOtherSessionsAction;
 use App\Domain\Auth\Actions\LogoutSessionAction;
 use App\Domain\Auth\Actions\LogoutUserAction;
@@ -40,6 +41,7 @@ use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\CreateUserRequest;
 use App\Http\Requests\Auth\RegisterCustomerRequest;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
+use App\Http\Requests\Auth\GoogleLoginRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\LogoutRequest;
 use App\Http\Requests\Auth\LogoutSessionRequest;
@@ -92,6 +94,27 @@ abstract class BaseAuthController extends Controller
         return new AuthResultResource(
             $action->execute(
                 $dto,
+            ),
+        );
+    }
+
+    // Sign in (or silently register) via a verified Google ID token.
+    // Deliberately not panel-gated the way login() is via $this->panel()
+    // — Google sign-in is currently only wired up for the customer panel
+    // (see routes/auth/customer.php), so this always resolves against
+    // AuthPanel::CUSTOMER inside AuthService::loginWithGoogle().
+    public function loginWithGoogle(
+        GoogleLoginRequest $request,
+        LoginWithGoogleAction $action,
+    ): AuthResultResource {
+
+        return new AuthResultResource(
+            $action->execute(
+                $request->validated('id_token'),
+                $request->ip(),
+                $request->userAgent(),
+                app(DeviceFingerprintService::class)
+                    ->deviceName($request),
             ),
         );
     }

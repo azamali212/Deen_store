@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\User\AddressController;
 use App\Http\Controllers\User\AvatarController;
+use App\Http\Controllers\User\DataExportController;
 use App\Http\Controllers\User\PhoneVerificationController;
 use App\Http\Controllers\User\PreferenceController;
 use App\Http\Controllers\User\ProfileController;
@@ -55,5 +56,12 @@ Route::middleware([
 
                 Route::post('send-code', [PhoneVerificationController::class, 'sendCode'])->name('send-code');
                 Route::post('verify', [PhoneVerificationController::class, 'verify'])->name('verify');
+            });
+
+        Route::prefix('privacy')
+            ->name('privacy.')
+            ->group(function (): void {
+
+                Route::get('data-export', [DataExportController::class, 'export'])->name('data-export');
             });
     });

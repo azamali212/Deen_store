@@ -27,7 +27,7 @@ final class AuthPolicy
     {
         return $user->hasAnyRole([
             'super_admin',
-            'admin',
+            'platform_admin',
         ]);
     }
 
@@ -35,7 +35,7 @@ final class AuthPolicy
     {
         return $user->hasAnyRole([
             'super_admin',
-            'admin',
+            'platform_admin',
         ]);
     }
 
@@ -43,7 +43,7 @@ final class AuthPolicy
     {
         return $user->hasAnyRole([
             'super_admin',
-            'admin',
+            'platform_admin',
         ]);
     }
 

@@ -8,12 +8,14 @@ use App\Domain\Audit\Enums\AuditAction;
 use App\Domain\Audit\Enums\AuditCategory;
 use App\Domain\Audit\Enums\AuditSeverity;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use LogicException;
 
 final class AuditLog extends Model
 {
+    use HasFactory;
     use HasUuids;
 
     public const UPDATED_AT = null;

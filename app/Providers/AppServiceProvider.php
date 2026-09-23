@@ -8,6 +8,8 @@ use App\Domain\Auth\Repositories\Contracts\PasswordHistoryRepositoryInterface;
 use App\Domain\Auth\Repositories\Contracts\TwoFactorRepositoryInterface;
 use App\Domain\Auth\Repositories\PasswordHistoryRepository;
 use App\Domain\Auth\Repositories\TwoFactorRepository;
+use App\Domain\Auth\Contracts\GoogleTokenVerifierInterface;
+use App\Domain\Auth\Support\GoogleIdTokenVerifier;
 use App\Domain\User\Contracts\AvatarStorageInterface;
 use App\Domain\User\Contracts\SmsGatewayInterface;
 use App\Domain\User\Repositories\Contracts\UserAddressRepositoryInterface;
@@ -38,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(UserPreferenceRepositoryInterface::class, UserPreferenceRepository::class);
         $this->app->bind(AvatarStorageInterface::class, LocalAvatarStorage::class);
         $this->app->bind(SmsGatewayInterface::class, LogSmsGateway::class);
+        $this->app->bind(GoogleTokenVerifierInterface::class, GoogleIdTokenVerifier::class);
     }
 
     /**

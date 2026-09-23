@@ -21,6 +21,7 @@ use App\Models\LoginLog;
 use App\Models\LoginOtp;
 use App\Models\TrustedDevice;
 use App\Models\User;
+use App\Models\UserSocialAccount;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -309,5 +310,23 @@ final readonly class AuthRepository implements AuthRepositoryInterface
         $user->restore();
 
         return $user;
+    }
+
+    public function findSocialAccount(string $provider, string $providerUserId): ?UserSocialAccount
+    {
+        return UserSocialAccount::query()
+            ->where('provider', $provider)
+            ->where('provider_user_id', $providerUserId)
+            ->first();
+    }
+
+    public function createSocialAccount(int|string $userId, string $provider, string $providerUserId, ?string $email): UserSocialAccount
+    {
+        return UserSocialAccount::query()->create([
+            'user_id' => $userId,
+            'provider' => $provider,
+            'provider_user_id' => $providerUserId,
+            'email' => $email,
+        ]);
     }
 }

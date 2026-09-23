@@ -59,4 +59,5 @@ enum AuditAction: string
     case PROFILE_FLAGGED = 'moderation.profile.flagged';
     case MODERATION_FLAG_RESOLVED = 'moderation.flag.resolved';
     case PROFILE_CONTENT_BLOCKED = 'moderation.profile.content_blocked';
+    case DATA_EXPORTED = 'user.data.exported';
 }

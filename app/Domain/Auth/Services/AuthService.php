@@ -6,6 +6,7 @@ namespace App\Domain\Auth\Services;
 
 use App\Domain\Auth\DTO\AuthResult;
 use App\Domain\Auth\DTO\CreateUserDTO;
+use App\Domain\Auth\DTO\GoogleProfileDTO;
 use App\Domain\Auth\DTO\LoginDTO;
 use App\Domain\Auth\DTO\LoginRateLimitDTO;
 use App\Domain\Auth\DTO\LogoutDTO;
@@ -25,6 +26,7 @@ use App\Domain\Permissions\Enums\SystemRole;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 final readonly class AuthService
@@ -333,6 +335,124 @@ final readonly class AuthService
                 return $user;
             },
         );
+    }
+
+    /**
+     * Sign in (or silently register) a user via a verified Google
+     * identity. Google having verified who they are stands in for our
+     * own password + OTP checks, so this goes straight to
+     * loginCompletionService once the account is resolved — no
+     * password, no email OTP. Two-factor is the one thing we still
+     * enforce afterwards, same as a password login would.
+     *
+     * Currently scoped to the customer panel only — social login for
+     * seller/admin accounts isn't offered; those keep password + 2FA.
+     */
+    public function loginWithGoogle(
+        GoogleProfileDTO $profile,
+        string $ipAddress,
+        ?string $userAgent,
+        ?string $deviceName,
+    ): AuthResult {
+
+        $user = $this->resolveGoogleUser($profile);
+
+        $this->accountLockoutService->ensureNotLocked($user);
+
+        if (! $user->isActive()) {
+            throw new AccountInactiveException;
+        }
+
+        $this->panelAccessService->ensureCanAccess(
+            $user,
+            AuthPanel::CUSTOMER,
+        );
+
+        if ($user->two_factor_enabled) {
+            return new AuthResult(
+                user: $user,
+                token: '',
+                tokenName: '',
+                sessionId: null,
+                abilities: [],
+                accessiblePanels: [],
+                requiresOtp: false,
+                requiresStepUp: false,
+                requiresTwoFactor: true,
+                message: 'Two-factor authentication required.',
+            );
+        }
+
+        return $this->loginCompletionService
+            ->complete(
+                user: $user,
+                panel: AuthPanel::CUSTOMER,
+                provider: LoginProvider::GOOGLE,
+                ipAddress: $ipAddress,
+                userAgent: $userAgent,
+                deviceName: $deviceName,
+            );
+    }
+
+    /**
+     * Finds the user behind a verified Google identity, in priority
+     * order: an existing google-linked account first (fastest path, and
+     * correct even if the user's email changed on Google's side since
+     * they last signed in); otherwise an existing password-based account
+     * with the same email (auto-linked — safe because Google has already
+     * verified the person owns that email); otherwise a brand-new
+     * account is created for them.
+     */
+    private function resolveGoogleUser(GoogleProfileDTO $profile): User
+    {
+        $socialAccount = $this->repository->findSocialAccount(
+            LoginProvider::GOOGLE->value,
+            $profile->googleId,
+        );
+
+        if ($socialAccount !== null) {
+            $user = $this->repository->findUserById($socialAccount->user_id);
+
+            if (! $user instanceof User) {
+                throw new InvalidCredentialsException;
+            }
+
+            return $user;
+        }
+
+        $user = $this->repository->findUserByEmail($profile->email);
+
+        if (! $user instanceof User) {
+            $user = $this->repository->createUser(
+                new CreateUserData(
+                    name: $profile->name ?? explode('@', $profile->email)[0],
+                    email: $profile->email,
+                    // Never used to sign in (Google login is the only
+                    // way in for an account created this way) — a long
+                    // random hash instead of a guessable placeholder.
+                    passwordHash: Hash::make(Str::random(40)),
+                    emailVerified: $profile->emailVerified,
+                ),
+            );
+
+            $user->assignRole(SystemRole::CUSTOMER->value);
+
+            event(
+                new UserCreated(
+                    user: $user,
+                    createdBy: 'google-oauth',
+                ),
+            );
+        }
+
+        $this->repository->createSocialAccount(
+            $user->id,
+            LoginProvider::GOOGLE->value,
+            $profile->googleId,
+            $profile->email,
+        );
+
+        return $user;
     }
 
     private function resolvePanel(

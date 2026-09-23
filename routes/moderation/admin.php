@@ -11,7 +11,7 @@ Route::prefix('v1/admin/moderation')
     ->middleware([
         'auth:sanctum',
         'active',
-        'role:super_admin|admin',
+        'role:super_admin|platform_admin',
     ])
     ->group(function (): void {
 

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Google Sign-In — id_token tester</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { font-size: 20px; }
+  .step { margin-bottom: 24px; padding: 16px; border: 1px solid #ddd; border-radius: 8px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  input[type=text] { width: 100%; padding: 8px; font-size: 14px; box-sizing: border-box; }
+  button { padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  textarea { width: 100%; height: 90px; font-family: monospace; font-size: 11px; margin-top: 8px; }
+  pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+  #g_id_signin_container { margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<h1>Google Sign-In — id_token tester (local dev only)</h1>
+<p>Ye page sirf ek testing helper hai — apna Google Cloud OAuth Client ID neeche paste karo, sign in karo, aur jo <code>id_token</code> milega usay Postman mein <code>POST /api/v1/customer/auth/login/google</code> ke JSON body mein bhej do.</p>
+
+<div class="step">
+  <label for="clientId">Google OAuth Client ID</label>
+  <input type="text" id="clientId" placeholder="123456789-xxxxxxxx.apps.googleusercontent.com">
+  <button onclick="loadGoogleButton()" style="margin-top:10px;">Load Sign-In Button</button>
+  <div id="g_id_signin_container"></div>
+</div>
+
+<div class="step" id="resultBox" style="display:none;">
+  <label>Raw id_token (copy this into Postman as "id_token")</label>
+  <textarea id="rawToken" readonly onclick="this.select()"></textarea>
+  <button onclick="copyToken()">Copy Token</button>
+
+  <label style="margin-top:16px;">Decoded payload (just for reading — NOT how the backend verifies it)</label>
+  <pre id="decodedPayload"></pre>
+
+  <label style="margin-top:16px;">Ready-to-paste Postman JSON body</label>
+  <pre id="postmanBody"></pre>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+  function loadGoogleButton() {
+    const clientId = document.getElementById('clientId').value.trim();
+    if (!clientId) { alert('Pehle Client ID daalo.'); return; }
+
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: handleCredentialResponse,
+    });
+
+    google.accounts.id.renderButton(
+      document.getElementById('g_id_signin_container'),
+      { theme: 'outline', size: 'large' },
+    );
+  }
+
+  function handleCredentialResponse(response) {
+    const idToken = response.credential;
+
+    document.getElementById('resultBox').style.display = 'block';
+    document.getElementById('rawToken').value = idToken;
+
+    // Decode only (no signature check) — purely so you can SEE what's
+    // inside before sending it. The real verification happens server-side
+    // in GoogleIdTokenVerifier, using Google's public keys.
+    const payloadPart = idToken.split('.')[1];
+    const decoded = JSON.parse(atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/')));
+    document.getElementById('decodedPayload').textContent = JSON.stringify(decoded, null, 2);
+
+    document.getElementById('postmanBody').textContent = JSON.stringify({ id_token: idToken }, null, 2);
+  }
+
+  function copyToken() {
+    const el = document.getElementById('rawToken');
+    el.select();
+    document.execCommand('copy');
+  }
+</script>
+
+</body>
+</html>

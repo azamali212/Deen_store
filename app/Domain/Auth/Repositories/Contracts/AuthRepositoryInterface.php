@@ -16,6 +16,7 @@ use App\Models\LoginLog;
 use App\Models\LoginOtp;
 use App\Models\TrustedDevice;
 use App\Models\User;
+use App\Models\UserSocialAccount;
 use Illuminate\Database\Eloquent\Collection;
 use App\Domain\Auth\Repositories\DTO\CreateEmailVerificationData;
 use App\Domain\Auth\Repositories\DTO\CreatePasswordResetData;
@@ -102,4 +103,8 @@ interface AuthRepositoryInterface
     public function deleteUser(User $user): bool;
 
     public function restoreUser(int|string $id): ?User;
+
+    public function findSocialAccount(string $provider, string $providerUserId): ?UserSocialAccount;
+
+    public function createSocialAccount(int|string $userId, string $provider, string $providerUserId, ?string $email): UserSocialAccount;
 }

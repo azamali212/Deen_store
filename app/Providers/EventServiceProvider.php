@@ -24,6 +24,7 @@ use App\Domain\Audit\Listeners\AuditAvatarUploadedListener;
 use App\Domain\Audit\Listeners\AuditPreferencesUpdatedListener;
 use App\Domain\Audit\Listeners\AuditPhoneVerifiedListener;
 use App\Domain\Audit\Listeners\AuditProfileUpdatedListener;
+use App\Domain\Audit\Listeners\AuditUserDataExportedListener;
 use App\Domain\Audit\Listeners\AuditProfileFlaggedListener;
 use App\Domain\Audit\Listeners\AuditModerationFlagResolvedListener;
 use App\Domain\Audit\Listeners\AuditProfileContentBlockedListener;
@@ -83,6 +84,7 @@ use App\Domain\User\Events\ProfileCompleted;
 use App\Domain\User\Events\PreferencesUpdated;
 use App\Domain\User\Events\PhoneVerified;
 use App\Domain\User\Events\ProfileUpdated;
+use App\Domain\User\Events\UserDataExported;
 use App\Domain\Moderation\Events\ProfileFlaggedForReview;
 use App\Domain\Moderation\Events\ModerationFlagResolved;
 use App\Domain\Moderation\Events\ProfileContentBlocked;
@@ -224,6 +226,10 @@ final class EventServiceProvider extends ServiceProvider
         ProfileUpdated::class => [
             AuditProfileUpdatedListener::class,
             RecalculateProfileCompletionListener::class,
+        ],
+
+        UserDataExported::class => [
+            AuditUserDataExportedListener::class,
         ],
 
         AvatarUploaded::class => [

@@ -3,7 +3,10 @@
 use App\Domain\Audit\Exceptions\AiSummaryUnavailableException;
 use App\Domain\Moderation\Exceptions\ModerationFlagAlreadyResolvedException;
 use App\Domain\Moderation\Exceptions\ProfileContentRejectedException;
+use App\Domain\User\Exceptions\AddressLimitExceededException;
+use App\Domain\User\Exceptions\AddressNotFoundException;
 use App\Domain\Auth\Exceptions\AccountLockedException;
+use App\Domain\Auth\Exceptions\AuthException;
 use App\Domain\Auth\Exceptions\TooManyLoginAttemptsException;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureAuditCorrelationId;
@@ -101,6 +104,42 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => $e->getMessage(),
                     'flagged_fields' => $e->context()['flagged_fields'] ?? [],
                 ], 422);
+            },
+        );
+
+        $exceptions->render(
+            function (AddressLimitExceededException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            },
+        );
+
+        $exceptions->render(
+            function (AddressNotFoundException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 404);
+            },
+        );
+
+        // Catch-all for every other Auth-domain exception (invalid
+        // credentials, inactive account, panel access denied, invalid
+        // social-login token, and more) — registered LAST so the two
+        // more specific handlers above (which attach extra fields like
+        // retry_after) still win for the exceptions they cover. Every
+        // AuthException subclass already carries its own correct HTTP
+        // status via statusCode() (set in its constructor) — this was
+        // simply never wired up before now, so those exceptions were
+        // falling through to a raw 500 instead of their real status.
+        $exceptions->render(
+            function (AuthException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], $e->statusCode());
             },
         );
     })->create();

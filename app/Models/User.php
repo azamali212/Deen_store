@@ -131,4 +131,9 @@ class User extends Authenticatable
         return $this->hasOne(UserPreference::class);
 
     }
+
+    public function socialAccounts(): HasMany
+    {
+        return $this->hasMany(UserSocialAccount::class);
+    }
 }
