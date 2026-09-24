@@ -86,4 +86,22 @@ enum AuditAction: string
     case SELLER_TEAM_MEMBER_JOINED = 'seller.team.member_joined';
     case SELLER_TEAM_ROLE_CHANGED = 'seller.team.role_changed';
     case SELLER_TEAM_MEMBER_REMOVED = 'seller.team.member_removed';
+
+    // Phase 8a — document expiry and re-KYC.
+    case SELLER_DOCUMENT_RENEWAL_UPLOADED = 'seller.document.renewal_uploaded';
+    case SELLER_DOCUMENT_RENEWAL_APPROVED = 'seller.document.renewal_approved';
+    case SELLER_DOCUMENT_RENEWAL_REJECTED = 'seller.document.renewal_rejected';
+    case SELLER_KYC_EXPIRING = 'seller.kyc.expiring';
+    case SELLER_KYC_EXPIRED = 'seller.kyc.expired';
+
+    // Phase 8b — the seller's own exit. Kept apart from SELLER_SUSPENDED
+    // on purpose: who ended the business is the point of the record.
+    case SELLER_STORE_CLOSED = 'seller.store.closed';
+    case SELLER_STORE_REOPEN_REQUESTED = 'seller.store.reopen_requested';
+    case SELLER_STORE_REOPENED = 'seller.store.reopened';
+
+    // Phase 9 — renaming and retention.
+    case SELLER_STORE_NAME_CHANGE_REQUESTED = 'seller.store.name_change_requested';
+    case SELLER_STORE_RENAMED = 'seller.store.renamed';
+    case SELLER_STORE_NAME_CHANGE_REJECTED = 'seller.store.name_change_rejected';
 }

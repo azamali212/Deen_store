@@ -30,6 +30,22 @@ final class AdminSellerResource extends JsonResource
                 'name' => $this->user->name,
                 'email' => $this->user->email,
             ]),
+            // P8-5 — separate from 'suspension' on purpose: the reviewer
+            // must be able to see at a glance who ended this business.
+            // C45 — 'store_name' above is still the LIVE name. This is only
+            // what was asked for; nothing customer-facing has moved yet.
+            'pending_name' => $this->when($this->pending_store_name !== null, fn (): array => [
+                'requested' => $this->pending_store_name,
+                'requested_at' => $this->store_name_requested_at?->toDateTimeString(),
+            ]),
+
+            'closure' => $this->when($this->closed_at !== null, fn (): array => [
+                'closed_at' => $this->closed_at?->toDateTimeString(),
+                'reason' => $this->closure_reason,
+                'reopen_requested_at' => $this->reopen_requested_at?->toDateTimeString(),
+                'awaiting_reopen_review' => $this->hasReopenRequestPending(),
+            ]),
+
             'suspension' => $this->when($this->suspended_at !== null, fn (): array => [
                 'reason' => $this->suspension_reason,
                 'suspended_at' => $this->suspended_at,

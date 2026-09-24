@@ -19,7 +19,8 @@ final readonly class ListSellersAction
         ?SellerProfileStatus $status,
         ?BankVerificationStatus $bank,
         int $perPage = 20,
+        bool $namePendingOnly = false,
     ): LengthAwarePaginator {
-        return $this->service->list($status, $bank, $perPage);
+        return $this->service->list($status, $bank, $perPage, $namePendingOnly);
     }
 }

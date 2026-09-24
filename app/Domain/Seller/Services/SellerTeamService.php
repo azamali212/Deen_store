@@ -7,6 +7,7 @@ namespace App\Domain\Seller\Services;
 use App\Domain\Seller\Enums\SellerTeamMemberStatus;
 use App\Domain\Seller\Enums\SellerTeamRole;
 use App\Domain\Seller\Exceptions\SellerProfileNotFoundException;
+use App\Domain\Seller\Exceptions\SellerStoreClosedException;
 use App\Domain\Seller\Exceptions\SellerStoreSuspendedException;
 use App\Domain\Seller\Exceptions\SellerTeamMemberNotFoundException;
 use App\Domain\Seller\Exceptions\SellerTeamPermissionException;
@@ -153,10 +154,9 @@ final readonly class SellerTeamService
         return DB::transaction(function () use ($userId, $memberId): SellerTeamMember {
             $member = $this->findInvitation($userId, $memberId);
 
-            // Nobody joins a store that is closed.
-            if ($member->sellerProfile->isSuspended()) {
-                throw SellerStoreSuspendedException::forProfile((int) $member->seller_profile_id);
-            }
+            // Nobody joins a store that is not open — suspended by us, or
+            // closed by its own owner (C33).
+            $this->ensureStoreOpen($member);
 
             $member = $this->team->update($member, [
                 'status' => SellerTeamMemberStatus::ACTIVE->value,
@@ -181,6 +181,37 @@ final readonly class SellerTeamService
     }
 
     /**
+     * P8-5 — the store closed. Access goes, the TEAM ROWS STAY (C31), so
+     * reopening restores exactly the team that was there instead of making
+     * the owner rebuild it by hand.
+     *
+     * C39 — the OWNER keeps their seller role. If it came off too, they
+     * could not reach any seller route, including the one that asks for
+     * the store to be reopened — they would be locked out of their own
+     * exit. This mirrors suspension (P6-1): the panel still opens, it just
+     * refuses every write.
+     */
+    public function stripStoreRoles(int $sellerProfileId): void
+    {
+        foreach ($this->team->activeForStore($sellerProfileId) as $member) {
+            if ($member->isOwner()) {
+                continue;
+            }
+
+            $member->user?->removeRole($member->role->systemRole()->value);
+        }
+    }
+
+    public function restoreStoreRoles(int $sellerProfileId): void
+    {
+        foreach ($this->team->activeForStore($sellerProfileId) as $member) {
+            // assignRole is idempotent, so the owner (who kept theirs) is
+            // simply re-confirmed rather than duplicated.
+            $member->user?->assignRole($member->role->systemRole()->value);
+        }
+    }
+
+    /**
      * Used by SellerProfileService before every write.
      *
      * @param  callable(SellerTeamRole): bool  $check
@@ -193,14 +224,20 @@ final readonly class SellerTeamService
     }
 
     /**
-     * P6/P7 — a closed store is frozen. Nobody is hired, promoted or fired
-     * while it is suspended; acceptInvitation() enforces the same rule from
-     * the invitee's side.
+     * P6/P7/P8 — a store that is not open is frozen for team changes:
+     * nobody is hired, promoted or fired, and nobody joins. One helper for
+     * every path, so a new non-open state cannot miss one (C33).
      */
     private function ensureStoreOpen(SellerTeamMember $member): void
     {
-        if ($member->sellerProfile->isSuspended()) {
+        $profile = $member->sellerProfile;
+
+        if ($profile->isSuspended()) {
             throw SellerStoreSuspendedException::forProfile((int) $member->seller_profile_id);
+        }
+
+        if ($profile->isClosed()) {
+            throw SellerStoreClosedException::forProfile((int) $member->seller_profile_id);
         }
     }
 

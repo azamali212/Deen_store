@@ -15,9 +15,11 @@ use App\Domain\Seller\Contracts\DocumentVerifierInterface;
 use App\Domain\Seller\Contracts\LogoStorageInterface;
 use App\Domain\Seller\Repositories\Contracts\SellerApplicationRepositoryInterface;
 use App\Domain\Seller\Repositories\Contracts\SellerProfileRepositoryInterface;
+use App\Domain\Seller\Repositories\Contracts\SellerRenewalRepositoryInterface;
 use App\Domain\Seller\Repositories\Contracts\SellerTeamRepositoryInterface;
 use App\Domain\Seller\Repositories\SellerApplicationRepository;
 use App\Domain\Seller\Repositories\SellerProfileRepository;
+use App\Domain\Seller\Repositories\SellerRenewalRepository;
 use App\Domain\Seller\Repositories\SellerTeamRepository;
 use App\Domain\Seller\Support\GeminiDocumentVerifier;
 use App\Domain\Seller\Support\LocalDocumentStorage;
@@ -33,6 +35,9 @@ use App\Domain\User\Repositories\UserPreferenceRepository;
 use App\Domain\User\Repositories\UserProfileRepository;
 use App\Domain\User\Support\LocalAvatarStorage;
 use App\Domain\User\Support\LogSmsGateway;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -59,6 +64,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(SellerApplicationRepositoryInterface::class, SellerApplicationRepository::class);
         $this->app->bind(SellerProfileRepositoryInterface::class, SellerProfileRepository::class);
         $this->app->bind(SellerTeamRepositoryInterface::class, SellerTeamRepository::class);
+        $this->app->bind(SellerRenewalRepositoryInterface::class, SellerRenewalRepository::class);
         $this->app->bind(DocumentStorageInterface::class, LocalDocumentStorage::class);
         $this->app->bind(LogoStorageInterface::class, LocalLogoStorage::class);
 
@@ -77,6 +83,24 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        $this->registerRateLimiters();
+    }
+
+    /**
+     * C35 — every seller document upload is a BILLABLE AI call, made
+     * BEFORE the file is stored, so even a rejected upload costs money.
+     * These limits sit on the routes, ahead of the controllers, so a
+     * throttled request never reaches the AI at all.
+     *
+     * Keyed per authenticated USER, not per IP: everyone here is logged
+     * in, and an IP key would punish a whole office behind one connection.
+     */
+    private function registerRateLimiters(): void
+    {
+        RateLimiter::for('seller-documents', fn (Request $request): Limit => Limit::perHour(20)
+            ->by((string) ($request->user()?->id ?? $request->ip())));
+
+        RateLimiter::for('seller-bank-proof', fn (Request $request): Limit => Limit::perHour(5)
+            ->by((string) ($request->user()?->id ?? $request->ip())));
     }
 }

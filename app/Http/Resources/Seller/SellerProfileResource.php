@@ -22,7 +22,31 @@ final class SellerProfileResource extends JsonResource
             'business_type' => $this->business_type->value,
             'status' => $this->status->value,
             'status_label' => $this->status->label(),
+
+            // Phase 8a — the seller can see exactly why payouts are held.
+            'kyc' => [
+                'status' => $this->kycStatus()->value,
+                'status_label' => $this->kycStatus()->label(),
+                'expires_on' => $this->earliestKycExpiry()?->toDateString(),
+                'cnic_expires_at' => $this->cnic_expires_at?->toDateString(),
+                'licence_expires_at' => $this->licence_expires_at?->toDateString(),
+                'blocks_payout' => $this->kycStatus()->blocksPayout(),
+            ],
+            'payout_ready' => $this->isPayoutReady(),
             // P6-1 — a suspended store is read-only; the seller sees why.
+            // C45 — 'store_name' above is still the LIVE name. This is only
+            // what was asked for; nothing customer-facing has moved yet.
+            'pending_name' => $this->when($this->pending_store_name !== null, fn (): array => [
+                'requested' => $this->pending_store_name,
+                'requested_at' => $this->store_name_requested_at?->toDateTimeString(),
+            ]),
+
+            'closure' => $this->when($this->closed_at !== null, fn (): array => [
+                'closed_at' => $this->closed_at?->toDateTimeString(),
+                'reason' => $this->closure_reason,
+                'reopen_requested_at' => $this->reopen_requested_at?->toDateTimeString(),
+            ]),
+
             'suspension' => $this->when($this->suspended_at !== null, fn (): array => [
                 'reason' => $this->suspension_reason,
                 'suspended_at' => $this->suspended_at,

@@ -58,6 +58,14 @@ Route::middleware([
             ->whereNumber('seller')
             ->name('reactivate');
 
+        Route::post('{seller}/name/review', [AdminSellerController::class, 'reviewNameChange'])
+            ->whereNumber('seller')
+            ->name('name.review');
+
+        Route::post('{seller}/reopen', [AdminSellerController::class, 'reopen'])
+            ->whereNumber('seller')
+            ->name('reopen');
+
         Route::get('{seller}/bank/statement', [AdminSellerController::class, 'downloadBankProof'])
             ->whereNumber('seller')
             ->name('bank.statement');

@@ -44,6 +44,28 @@ enum SellerTeamRole: string
     }
 
     // Payout details follow payments.payouts, which only the owner has.
+    /**
+     * Phase 8a — a renewal replaces the OWNER's own identity document.
+     * A manager running the shop has no business uploading someone else's
+     * CNIC, so this stays with the owner alone.
+     */
+    /** P9-5 — a manager runs the shop; its NAME is the owner's identity. */
+    public function canRenameStore(): bool
+    {
+        return $this === self::OWNER;
+    }
+
+    /** P8-5 — dissolving the business is nobody else's decision. */
+    public function canCloseStore(): bool
+    {
+        return $this === self::OWNER;
+    }
+
+    public function canManageKycDocuments(): bool
+    {
+        return $this === self::OWNER;
+    }
+
     public function canManageBankDetails(): bool
     {
         return $this === self::OWNER;

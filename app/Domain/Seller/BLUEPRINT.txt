@@ -1,11 +1,13 @@
 ================================================================================
 SELLER ONBOARDING MODULE — BLUEPRINT v2
 ================================================================================
-Status : Phases 1-7 BUILT and green (211 tests). Phase 8 PLANNED, not built.
+Status : Phases 1-9 BUILT. The Seller domain is complete; what remains
+         (payouts, the public store page) belongs to other domains.
 Updated: 2026-09-24
 Code   : app/Domain/Seller/ — see section 5 for the file tree.
 Postman: postman/Seller_Phase2*, _Phase3_Admin*, _Phase4_Profile*,
-         _Phase6_AdminControl*, _Phase7_Team*
+         _Phase6_AdminControl*, _Phase7_Team*, _Phase8_Renewals*,
+         _Phase8b_Closure*, _Phase9_Retention_Rename*
 Rule   : decide first, write it here, THEN code. Every correction that cost
          a debugging round is written down as C<n> so it is not repeated.
 
@@ -883,15 +885,17 @@ UploadedFile::fake(), same as UploadAvatarTest.
 
 
 --------------------------------------------------------------------------------
-13. PHASE 8 — CLOSING THE SELLER DOMAIN            (planned 2026-09-24)
+13. PHASE 8 — CLOSING THE SELLER DOMAIN            (BUILT 2026-09-24)
 --------------------------------------------------------------------------------
   Three gaps stand between "the flow works" and "we never have to come back
   to this domain": documents that expire after approval, a seller with no way
   out, and an unmetered paid AI call. Plus one leftover from P7.
 
   ------------------------------------------------------------------
-  13a. DOCUMENT EXPIRY AND RE-KYC
+  13a. DOCUMENT EXPIRY AND RE-KYC                       (BUILT)
   ------------------------------------------------------------------
+  Postman: postman/Seller_Phase8_Renewals.postman_collection.json
+  Tests  : SellerDocumentRenewalTest, SellerKycExpiryTest
   THE BLOCKER: what the AI read is stored `encrypted:array`
   (seller_application_documents.ai_findings). Ciphertext cannot be queried,
   so `where date_of_expiry < now()` is impossible. A scheduled job can never
@@ -962,8 +966,10 @@ UploadedFile::fake(), same as UploadAvatarTest.
              POST /v1/admin/seller-renewals/{id}/review  { decision, reason? }
 
   ------------------------------------------------------------------
-  13b. SELLER CLOSES THEIR OWN STORE
+  13b. SELLER CLOSES THEIR OWN STORE                    (BUILT)
   ------------------------------------------------------------------
+  Postman: postman/Seller_Phase8b_Closure.postman_collection.json
+  Tests  : SellerStoreClosureTest
   DECISIONS
     P8-5  `closed` is a THIRD status, never reusing `suspended`. Suspended
           means the platform punished them; closed means they walked away.
@@ -996,8 +1002,23 @@ UploadedFile::fake(), same as UploadAvatarTest.
              POST /v1/seller/profile/reopen   ask the admin to reopen
     Admin    POST /v1/admin/sellers/{seller}/reopen   approve the request
 
+  C39. The OWNER keeps their `seller` role when the store closes; only the
+       other members lose theirs. Stripping the owner's too would lock them
+       out of every seller route — including the one that ASKS for the store
+       back, which is their only way out. This mirrors suspension (P6-1):
+       the panel still opens, it just refuses every write.
+  C40. Closure exposed a latent bug in Phase 6. suspend() tested
+       `status === SUSPENDED` and reactivate() tested `status === ACTIVE` —
+       correct while those were the only two states. With CLOSED added,
+       reactivate() would have accepted a CLOSED store and flipped it to
+       active through the WRONG door: closed_at left behind and the team's
+       roles never restored. Both now name the state they require
+       (`isOpen()` / `=== SUSPENDED`) instead of the one they reject.
+       Lesson: a `!==` guard silently widens every time a new enum case is
+       added; name what you ALLOW, not what you forbid.
+
   ------------------------------------------------------------------
-  13c. RATE LIMITING THE PAID AI CALLS
+  13c. RATE LIMITING THE PAID AI CALLS                  (BUILT)
   ------------------------------------------------------------------
   C35. Every document upload is a BILLABLE AI call made BEFORE the file is
        stored — so a REJECTED upload costs money too. Without a limit one
@@ -1008,13 +1029,24 @@ UploadedFile::fake(), same as UploadAvatarTest.
        Limits: documents 20/hour, bank proof 5/hour, renewals 10/hour.
 
   ------------------------------------------------------------------
-  13d. LEFTOVER FROM PHASE 7
+  13d. LEFTOVER FROM PHASE 7                            (BUILT)
   ------------------------------------------------------------------
   C36. P7-1 (one person, one store) was only enforced at INVITE time, so a
        staff member could still start their own application and only hit the
        wall at approval — after doing all the work and paying for the AI
        checks. The check moves to application creation, where the answer is
        already knowable.
+
+  C37. SellerProfileFactory creates an application for every store it makes
+       (that is how a store exists at all), so a test asserting "this user
+       got no application" must scope to THAT USER, never count the whole
+       table. assertDatabaseCount(0) there was asserting nothing true.
+  C38. Two mistakes worth not repeating, both caught only at runtime:
+       PHPUnit's TestCase::run() is FINAL — a test helper named run()
+       makes the whole class a fatal error; and Illuminate\Support has
+       Carbon but NOT CarbonImmutable in this framework version. The house
+       style is Carbon\CarbonInterface for hints, Carbon\CarbonImmutable
+       for now(). `php -l` catches neither — it only reads syntax.
 
   TESTS TO ADD
     expiry job: null dates untouched | 30-day warn once, not daily |
@@ -1028,7 +1060,129 @@ UploadedFile::fake(), same as UploadAvatarTest.
     C36: a team member cannot start an application
 
 --------------------------------------------------------------------------------
-14. OUT OF SCOPE (later)
+14. PHASE 9 — THE LAST OF THE SELLER DOMAIN        (BUILT 2026-09-24)
+--------------------------------------------------------------------------------
+  What is left after Phase 8, minus the things that belong to other domains
+  (payouts need Orders/Payments; the public store page comes with Catalog).
+
+  ------------------------------------------------------------------
+  14a. KYC DOCUMENT RETENTION                           (BUILT)
+  ------------------------------------------------------------------
+  Postman: postman/Seller_Phase9_Retention_Rename.postman_collection.json
+  Tests  : SellerKycRetentionTest
+  THE GAP: we collect CNIC scans and bank statements and NEVER delete them.
+  A seller rejected five times leaves five copies of their identity document
+  on disk forever. Closure (13b) is what finally makes this fixable: until
+  there was a way for a relationship to END, there was no clock to start.
+
+  DECISIONS
+    P9-1  Two different clocks, because the files answer two different
+          questions:
+            SUPERSEDED evidence — a rejected renewal, or an approved one
+            that a newer approved renewal has replaced. It proves nothing
+            current. Keep the FILE 90 days (long enough to settle a
+            dispute), then purge it.
+            CURRENT evidence — the onboarding documents and the newest
+            approved renewal per type. These are what the admin approved,
+            so they live as long as the business does, plus a retention
+            period after it ENDS (closed, per 13b).
+    P9-2  The ROW is never deleted, only the file. The row keeps saying a
+          document existed, who reviewed it and when — and now also
+          file_purged_at. Deleting the row would erase the KYC history we
+          are legally required to be able to show.
+    P9-3  The retention window is CONFIG, not a literal buried in code:
+            config('seller.kyc_retention_days')       default 1825 (5 yrs)
+            config('seller.superseded_retention_days') default 90
+          1825 days is the common AML/KYC figure, NOT legal advice and NOT
+          verified for Pakistan. Confirm it with a lawyer before launch;
+          changing it is one .env value, by design.
+
+  C41. Purging is driven by CLOSED_AT, never by "inactive for a while". A
+       quiet seller is still a seller; only a store that actually ended
+       starts the clock.
+  C42. A suspended store's documents are NEVER purged, whatever the dates.
+       Suspension usually means an investigation is open, and destroying
+       the evidence mid-investigation is the worst possible time to do it.
+  C43. The purge is idempotent and file-first: delete the file, then stamp
+       file_purged_at. If it dies in between, the next run simply finds a
+       missing file and stamps it — never the reverse, which would leave a
+       file on disk that nothing points at any more.
+
+  NEW COLUMNS
+    seller_application_documents : file_purged_at (timestamp, null)
+    seller_document_renewals     : file_purged_at (timestamp, null)
+
+  SCHEDULED  seller:purge-expired-kyc-documents   daily
+    superseded/rejected renewals older than superseded_retention_days
+    + every document of a store closed longer ago than kyc_retention_days
+
+  ------------------------------------------------------------------
+  14b. CHANGING THE STORE NAME AFTER APPROVAL           (BUILT)
+  ------------------------------------------------------------------
+  Postman: postman/Seller_Phase9_Retention_Rename.postman_collection.json
+  Tests  : SellerStoreRenameTest
+  THE GAP: C6 locked store_name forever at approval. That was right — the
+  admin verified it — but "forever" is wrong: real businesses rebrand, and
+  today the only route is to close and start over.
+
+  DECISIONS
+    P9-4  The seller REQUESTS, an admin approves. Same shape as everything
+          else the admin verified. No new table for one field: two columns
+          on seller_profiles (pending_store_name, store_name_requested_at)
+          carry the whole thing.
+    P9-5  Owner only. A manager runs the shop; the shop's NAME is the
+          business's identity, which is the owner's.
+
+  C44. Uniqueness is checked TWICE — when the name is requested AND again
+       inside the approval transaction. Between the two, another store can
+       take that name. Checking only at request time is the classic race
+       that ends with two stores sharing a name and a UNIQUE index blowing
+       up in an admin's face.
+  C45. The old name stays live until the moment it is approved. A request
+       is not a rename; nothing user-visible changes while it is pending.
+  C46. The admin list validated `in:active,suspended`, typed out by hand.
+       CLOSED was added to the enum in 13b and that list did not follow, so
+       closed stores were silently unfilterable. The rule now derives from
+       SellerProfileStatus::values(). Same family as C40: a hand-written
+       copy of an enum rots the moment the enum grows.
+  C47. Query ordering goes LAST and the cases are exclusive. Chaining
+       reorder() for the rename queue and then latest('id') produced BOTH
+       orderings — the queue was sorted by request date, then re-sorted by
+       id. A queue is oldest-first (nobody waits behind a later arrival);
+       a browse list is newest-first.
+
+  NEW COLUMNS  seller_profiles
+    pending_store_name (string 100, null)
+    store_name_requested_at (timestamp, null)
+
+  ENDPOINTS
+    Seller   POST /v1/seller/profile/name          { store_name }
+             DELETE /v1/seller/profile/name        withdraw the request
+    Admin    GET  /v1/admin/sellers?name_pending=1 who is waiting
+             POST /v1/admin/sellers/{id}/name/review { decision, reason? }
+
+  ------------------------------------------------------------------
+  14c. `under_review` ON APPLICATIONS — DELIBERATELY NOT BUILT
+  ------------------------------------------------------------------
+  D5 deferred this and it stays deferred, now as a decision rather than a
+  postponement.
+
+  The danger it guards against — two admins reviewing the same application
+  and one overwriting the other — is ALREADY handled: every review locks
+  the row FOR UPDATE inside a transaction (C13), so the second admin waits,
+  sees the new status, and gets a clean 409. Nothing can be corrupted.
+
+  What `under_review` would add is only politeness: not wasting a second
+  admin's reading time. The cost is a fourth status in the lifecycle, claim
+  and release endpoints, stale-claim expiry (an admin who claims and goes
+  home must not freeze an application forever), and every existing status
+  check re-examined. That is a poor trade at one reviewer.
+
+  BUILD IT WHEN: reviewers regularly collide — say a queue deep enough that
+  two people work it at once. Not before.
+
+--------------------------------------------------------------------------------
+15. OUT OF SCOPE (later)
 --------------------------------------------------------------------------------
   - Hash-chained, tamper-evident audit log (D4) — Audit domain task
   - under_review status + review locking (D5)

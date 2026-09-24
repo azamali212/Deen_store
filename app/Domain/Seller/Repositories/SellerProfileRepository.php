@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Seller\Repositories;
 
 use App\Domain\Seller\Enums\BankVerificationStatus;
+use App\Domain\Seller\Enums\SellerKycStatus;
 use App\Domain\Seller\Enums\SellerProfileStatus;
 use App\Domain\Seller\Repositories\Contracts\SellerProfileRepositoryInterface;
 use App\Domain\Seller\Repositories\Queries\SellerProfileQuery;
@@ -38,7 +39,15 @@ final readonly class SellerProfileRepository implements SellerProfileRepositoryI
             'business_name' => $application->business_name,
             'business_type' => $application->business_type->value,
             'status' => SellerProfileStatus::ACTIVE->value,
+            // C9 — always set in code. The expiry DATES are copied in
+            // straight after, by SellerApplicationService::approve() (P8-1).
+            'kyc_status' => SellerKycStatus::VALID->value,
         ]);
+    }
+
+    public function storeNameExists(string $storeName, ?int $exceptProfileId = null): bool
+    {
+        return $this->profiles->byStoreName($storeName, $exceptProfileId)->exists();
     }
 
     public function update(SellerProfile $profile, array $attributes): SellerProfile
@@ -57,8 +66,9 @@ final readonly class SellerProfileRepository implements SellerProfileRepositoryI
         ?SellerProfileStatus $status,
         ?BankVerificationStatus $bank,
         int $perPage,
+        bool $namePendingOnly = false,
     ): LengthAwarePaginator {
-        return $this->profiles->forAdmin($status, $bank)->paginate($perPage);
+        return $this->profiles->forAdmin($status, $bank, $namePendingOnly)->paginate($perPage);
     }
 
     public function lockById(int $sellerProfileId): ?SellerProfile

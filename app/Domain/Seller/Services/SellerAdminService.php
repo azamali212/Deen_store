@@ -13,6 +13,9 @@ use App\Domain\Seller\Exceptions\CannotManageOwnStoreException;
 use App\Domain\Seller\Exceptions\InvalidBankVerificationStateException;
 use App\Domain\Seller\Exceptions\InvalidSellerStatusTransitionException;
 use App\Domain\Seller\Exceptions\SellerProfileNotFoundByAdminException;
+use App\Domain\Seller\Exceptions\DuplicateStoreNameException;
+use App\Domain\Seller\Exceptions\InvalidStoreNameChangeException;
+use App\Domain\Seller\Repositories\Contracts\SellerApplicationRepositoryInterface;
 use App\Domain\Seller\Repositories\Contracts\SellerProfileRepositoryInterface;
 use App\Models\SellerProfile;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -30,14 +33,17 @@ final readonly class SellerAdminService
     public function __construct(
         private SellerProfileRepositoryInterface $profiles,
         private DocumentStorageInterface $storage,
+        private SellerTeamService $team,
+        private SellerApplicationRepositoryInterface $applications,
     ) {}
 
     public function list(
         ?SellerProfileStatus $status,
         ?BankVerificationStatus $bank,
         int $perPage,
+        bool $namePendingOnly = false,
     ): LengthAwarePaginator {
-        return $this->profiles->paginateForAdmin($status, $bank, $perPage);
+        return $this->profiles->paginateForAdmin($status, $bank, $perPage, $namePendingOnly);
     }
 
     public function get(int $sellerProfileId): SellerProfile
@@ -53,7 +59,11 @@ final readonly class SellerAdminService
         return DB::transaction(function () use ($sellerProfileId, $dto): SellerProfile {
             $profile = $this->lock($sellerProfileId, $dto->adminId);
 
-            if ($profile->status === SellerProfileStatus::SUSPENDED) {
+            // C40 — was `=== SUSPENDED`. That was correct while ACTIVE and
+            // SUSPENDED were the only states; with CLOSED it would have let
+            // an admin suspend a closed store and silently wipe the fact
+            // that its owner had walked away.
+            if (! $profile->status->isOpen()) {
                 throw InvalidSellerStatusTransitionException::cannot('suspended', $profile->status);
             }
 
@@ -71,7 +81,11 @@ final readonly class SellerAdminService
         return DB::transaction(function () use ($sellerProfileId, $adminId): SellerProfile {
             $profile = $this->lock($sellerProfileId, $adminId);
 
-            if ($profile->status === SellerProfileStatus::ACTIVE) {
+            // C40 — was `=== ACTIVE`. A CLOSED store would have passed that
+            // check and been flipped to active through the WRONG door:
+            // closed_at left behind, and the team's roles never restored.
+            // Reopening a closed store is reopen(), not reactivate().
+            if ($profile->status !== SellerProfileStatus::SUSPENDED) {
                 throw InvalidSellerStatusTransitionException::cannot('reactivated', $profile->status);
             }
 
@@ -83,6 +97,87 @@ final readonly class SellerAdminService
                 'suspended_by' => null,
                 'suspended_at' => null,
             ]);
+        });
+    }
+
+    /**
+     * P8-6 — an admin grants a closed store's request to come back.
+     * Deliberately NOT reactivate(): different columns to clear, and the
+     * team's access has to be handed back.
+     */
+    public function reopen(int $sellerProfileId, int $adminId): SellerProfile
+    {
+        return DB::transaction(function () use ($sellerProfileId, $adminId): SellerProfile {
+            $profile = $this->lock($sellerProfileId, $adminId);
+
+            if (! $profile->isClosed()) {
+                throw InvalidSellerStatusTransitionException::cannot('reopened', $profile->status);
+            }
+
+            $profile = $this->profiles->update($profile, [
+                'status' => SellerProfileStatus::ACTIVE->value,
+                'closed_at' => null,
+                'closure_reason' => null,
+                'reopen_requested_at' => null,
+            ]);
+
+            // C31 pays off here: the team rows were never deleted, so the
+            // exact team that existed before comes straight back.
+            $this->team->restoreStoreRoles((int) $profile->id);
+
+            return $profile;
+        });
+    }
+
+    /**
+     * P9-4 — approve or refuse a rename.
+     *
+     * @return array{profile: SellerProfile, previous_name: string, approved: bool, reason: ?string}
+     */
+    public function reviewNameChange(int $sellerProfileId, int $adminId, bool $approve, ?string $reason): array
+    {
+        return DB::transaction(function () use ($sellerProfileId, $adminId, $approve, $reason): array {
+            $profile = $this->lock($sellerProfileId, $adminId);
+
+            if (! $profile->hasNameChangePending()) {
+                throw InvalidStoreNameChangeException::nothingPending($sellerProfileId);
+            }
+
+            $requested = (string) $profile->pending_store_name;
+            $previous = (string) $profile->store_name;
+
+            if (! $approve) {
+                return [
+                    'profile' => $this->profiles->update($profile, [
+                        'pending_store_name' => null,
+                        'store_name_requested_at' => null,
+                    ]),
+                    'previous_name' => $previous,
+                    'approved' => false,
+                    'reason' => $reason,
+                ];
+            }
+
+            // C44 — the SECOND uniqueness check, inside the transaction on
+            // a locked row. Between the request and this moment another
+            // store can have taken the name; checking only at request time
+            // is the classic race that ends with two stores sharing a name
+            // and a UNIQUE index blowing up in an admin's face.
+            if ($this->profiles->storeNameExists($requested, (int) $profile->id)
+                || $this->applications->storeNameExists($requested)) {
+                throw DuplicateStoreNameException::taken($requested);
+            }
+
+            return [
+                'profile' => $this->profiles->update($profile, [
+                    'store_name' => $requested,
+                    'pending_store_name' => null,
+                    'store_name_requested_at' => null,
+                ]),
+                'previous_name' => $previous,
+                'approved' => true,
+                'reason' => null,
+            ];
         });
     }
 

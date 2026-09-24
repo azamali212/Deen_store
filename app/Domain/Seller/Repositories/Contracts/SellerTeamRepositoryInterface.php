@@ -18,6 +18,9 @@ interface SellerTeamRepositoryInterface
 
     public function listForStore(int $sellerProfileId): Collection;
 
+    /** Active members only — used when a store closes or reopens (C31). */
+    public function activeForStore(int $sellerProfileId): Collection;
+
     public function findForStore(int $memberId, int $sellerProfileId): ?SellerTeamMember;
 
     public function findInvitationForUser(int $memberId, int $userId): ?SellerTeamMember;

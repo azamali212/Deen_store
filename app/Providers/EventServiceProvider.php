@@ -47,6 +47,24 @@ use App\Domain\Seller\Events\SellerTeamMemberJoined;
 use App\Domain\Seller\Events\SellerTeamRoleChanged;
 use App\Domain\Seller\Events\SellerTeamMemberRemoved;
 use App\Domain\Audit\Listeners\AuditSellerTeamListener;
+use App\Domain\Audit\Listeners\AuditSellerKycListener;
+use App\Domain\Audit\Listeners\AuditSellerClosureListener;
+use App\Domain\Audit\Listeners\AuditSellerNameChangeListener;
+use App\Domain\Seller\Events\SellerStoreNameChangeRequested;
+use App\Domain\Seller\Events\SellerStoreNameChangeReviewed;
+use App\Domain\Seller\Listeners\NotifyAdminsOfNameChangeListener;
+use App\Domain\Seller\Listeners\NotifySellerOfNameChangeListener;
+use App\Domain\Seller\Events\SellerStoreClosed;
+use App\Domain\Seller\Events\SellerStoreReopenRequested;
+use App\Domain\Seller\Events\SellerStoreReopened;
+use App\Domain\Seller\Listeners\NotifySellerOfClosureListener;
+use App\Domain\Seller\Listeners\NotifyAdminsOfReopenRequestListener;
+use App\Domain\Seller\Events\SellerDocumentRenewalUploaded;
+use App\Domain\Seller\Events\SellerDocumentRenewalReviewed;
+use App\Domain\Seller\Events\SellerKycStatusChanged;
+use App\Domain\Seller\Listeners\NotifyAdminsOfDocumentRenewalListener;
+use App\Domain\Seller\Listeners\NotifySellerOfRenewalDecisionListener;
+use App\Domain\Seller\Listeners\NotifySellerOfKycStatusListener;
 use App\Domain\Seller\Events\SellerStoreSuspended;
 use App\Domain\Seller\Events\SellerStoreReactivated;
 use App\Domain\Seller\Events\SellerBankProofUploaded;
@@ -362,6 +380,49 @@ final class EventServiceProvider extends ServiceProvider
         SellerTeamMemberRemoved::class => [
             NotifyMemberOfAccessChangeListener::class,
             AuditSellerTeamListener::class,
+        ],
+
+        // Phase 8a — document expiry and re-KYC.
+        SellerDocumentRenewalUploaded::class => [
+            NotifyAdminsOfDocumentRenewalListener::class,
+            AuditSellerKycListener::class,
+        ],
+
+        SellerDocumentRenewalReviewed::class => [
+            NotifySellerOfRenewalDecisionListener::class,
+            AuditSellerKycListener::class,
+        ],
+
+        SellerKycStatusChanged::class => [
+            NotifySellerOfKycStatusListener::class,
+            AuditSellerKycListener::class,
+        ],
+
+        // Phase 8b — the seller's own exit and the way back.
+        SellerStoreClosed::class => [
+            NotifySellerOfClosureListener::class,
+            AuditSellerClosureListener::class,
+        ],
+
+        SellerStoreReopenRequested::class => [
+            NotifyAdminsOfReopenRequestListener::class,
+            AuditSellerClosureListener::class,
+        ],
+
+        SellerStoreReopened::class => [
+            NotifySellerOfClosureListener::class,
+            AuditSellerClosureListener::class,
+        ],
+
+        // Phase 9 — renaming a live store.
+        SellerStoreNameChangeRequested::class => [
+            NotifyAdminsOfNameChangeListener::class,
+            AuditSellerNameChangeListener::class,
+        ],
+
+        SellerStoreNameChangeReviewed::class => [
+            NotifySellerOfNameChangeListener::class,
+            AuditSellerNameChangeListener::class,
         ],
 
         AvatarUploaded::class => [

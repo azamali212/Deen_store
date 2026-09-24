@@ -23,6 +23,47 @@ enum SellerDocumentType: string
         return array_column(self::cases(), 'value');
     }
 
+    /**
+     * P8-1 — the name of the AI-extracted field holding this document's
+     * expiry date, or null when it has none. Kept here so the verifier's
+     * FIELDS whitelist and the expiry logic can never drift apart.
+     */
+    public function expiryField(): ?string
+    {
+        return match ($this) {
+            self::CNIC_FRONT => 'date_of_expiry',
+            self::BUSINESS_LICENSE => 'expiry_date',
+            default => null,
+        };
+    }
+
+    /** The plain, queryable seller_profiles column that date is copied to. */
+    public function expiryColumn(): ?string
+    {
+        return match ($this) {
+            self::CNIC_FRONT => 'cnic_expires_at',
+            self::BUSINESS_LICENSE => 'licence_expires_at',
+            default => null,
+        };
+    }
+
+    /**
+     * Documents a LIVE seller may replace. The tax certificate and bank
+     * statement are not here: the first never expires, the second has its
+     * own proof flow (P6-2).
+     *
+     * @return array<int, self>
+     */
+    public static function renewable(): array
+    {
+        return [self::CNIC_FRONT, self::CNIC_BACK, self::BUSINESS_LICENSE];
+    }
+
+    public function isRenewable(): bool
+    {
+        return in_array($this, self::renewable(), strict: true);
+    }
+
     public function label(): string
     {
         return match ($this) {

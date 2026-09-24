@@ -21,3 +21,4 @@ require __DIR__.'/seller/application.php';
 require __DIR__.'/seller/admin.php';
 require __DIR__.'/seller/profile.php';
 require __DIR__.'/seller/team.php';
+require __DIR__."/seller/renewals.php";

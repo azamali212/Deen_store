@@ -47,6 +47,15 @@ final class SellerTeamQuery
             ->orderBy('id');
     }
 
+    /** Active members only — used when a store closes or reopens (C31). */
+    public function activeForStore(int $sellerProfileId): Builder
+    {
+        return SellerTeamMember::query()
+            ->where('seller_profile_id', $sellerProfileId)
+            ->where('status', SellerTeamMemberStatus::ACTIVE->value)
+            ->with('user');
+    }
+
     public function byIdForStore(int $memberId, int $sellerProfileId): Builder
     {
         return SellerTeamMember::query()

@@ -18,4 +18,9 @@ final class InvalidSellerStatusTransitionException extends DomainException
                 'current_status' => $current->value,
             ]);
     }
+
+    public static function reopenAlreadyRequested(): self
+    {
+        return new self('You have already asked for this store to be reopened. Our team will review it.');
+    }
 }

@@ -16,6 +16,9 @@ interface SellerProfileRepositoryInterface
 
     public function createFromApplication(SellerApplication $application): SellerProfile;
 
+    /** C44 — checked when a rename is REQUESTED and again when approved. */
+    public function storeNameExists(string $storeName, ?int $exceptProfileId = null): bool;
+
     public function update(SellerProfile $profile, array $attributes): SellerProfile;
 
     public function findById(int $sellerProfileId): ?SellerProfile;
@@ -24,6 +27,7 @@ interface SellerProfileRepositoryInterface
         ?SellerProfileStatus $status,
         ?BankVerificationStatus $bank,
         int $perPage,
+        bool $namePendingOnly = false,
     ): LengthAwarePaginator;
 
     /**

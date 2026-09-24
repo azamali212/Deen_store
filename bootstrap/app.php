@@ -17,12 +17,17 @@ use App\Domain\Seller\Exceptions\SellerProfileNotFoundException;
 use App\Domain\Seller\Exceptions\DocumentRejectedByAiException;
 use App\Domain\Seller\Exceptions\DocumentVerificationUnavailableException;
 use App\Domain\Seller\Exceptions\ApplicationFailedAiChecksException;
+use App\Domain\Seller\Exceptions\InvalidStoreNameChangeException;
+use App\Domain\Seller\Exceptions\SellerStoreClosedException;
 use App\Domain\Seller\Exceptions\SellerStoreSuspendedException;
+use App\Domain\Seller\Exceptions\StoreClosureNotConfirmedException;
 use App\Domain\Seller\Exceptions\InvalidSellerStatusTransitionException;
 use App\Domain\Seller\Exceptions\CannotManageOwnStoreException;
 use App\Domain\Seller\Exceptions\InvalidBankVerificationStateException;
 use App\Domain\Seller\Exceptions\SellerProfileNotFoundByAdminException;
 use App\Domain\Seller\Exceptions\SellerTeamPermissionException;
+use App\Domain\Seller\Exceptions\SellerRenewalNotFoundException;
+use App\Domain\Seller\Exceptions\InvalidRenewalStateException;
 use App\Domain\Seller\Exceptions\SellerTeamMemberNotFoundException;
 use App\Domain\Seller\Exceptions\TeamInvitationNotAllowedException;
 use App\Domain\Seller\Exceptions\TeamMembershipConflictException;
@@ -370,6 +375,60 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => $e->getMessage(),
                 ], 409);
+            },
+        );
+
+        // Phase 8a — D11: mapped in the same step they were created, so
+        // the "exception exists but returns a raw 500" gap cannot happen.
+        $exceptions->render(
+            function (SellerRenewalNotFoundException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 404);
+            },
+        );
+
+        $exceptions->render(
+            function (InvalidRenewalStateException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
+            },
+        );
+
+        // Phase 9.
+        $exceptions->render(
+            function (InvalidStoreNameChangeException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
+            },
+        );
+
+        // Phase 8b.
+        $exceptions->render(
+            function (SellerStoreClosedException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 403);
+            },
+        );
+
+        // Shaped like a validation error so the frontend can show it under
+        // the confirmation field the seller just mistyped.
+        $exceptions->render(
+            function (StoreClosureNotConfirmedException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'errors' => [
+                        'confirm_store_name' => [$e->getMessage()],
+                    ],
+                ], 422);
             },
         );
 

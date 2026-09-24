@@ -126,6 +126,10 @@ final readonly class SellerDocumentService
         $document = $this->applications->findDocument($application, $type)
             ?? throw SellerDocumentNotFoundException::forType($applicationId, $type);
 
+        if ($document->isPurged()) {
+            throw SellerDocumentNotFoundException::purged();
+        }
+
         $extension = strtolower((string) pathinfo($document->original_name, PATHINFO_EXTENSION));
         $extension = preg_match('/^[a-z0-9]{1,5}$/', $extension) === 1 ? $extension : 'bin';
 

@@ -20,6 +20,9 @@ interface DocumentStorageInterface
 
     public function storeBankProof(int $sellerProfileId, UploadedFile $file): string;
 
+    /** Phase 8a — a replacement KYC document from a live seller. */
+    public function storeRenewal(int $sellerProfileId, UploadedFile $file): string;
+
     public function delete(string $path): void;
 
     public function download(string $path, string $downloadName): StreamedResponse;

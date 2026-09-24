@@ -420,4 +420,29 @@ final class SellerTeamTest extends TestCase
         $response->assertJsonPath('data.1.role', 'manager');
         $response->assertJsonPath('data.2.user.email', 's@example.com');
     }
+
+    /**
+     * C36 — P7-1 was only checked at INVITE time, so a team member could
+     * fill in a whole application and only hit the wall at approval.
+     */
+    public function test_a_team_member_cannot_start_their_own_application(): void
+    {
+        $store = $this->store();
+        $staff = $this->customer('staff@example.com');
+        $this->addMember($store, $staff, SellerTeamRole::STAFF);
+
+        Sanctum::actingAs($staff);
+
+        $this->postJson('/api/v1/seller/application', [
+            'store_name' => 'Staff Side Business',
+            'business_name' => 'Staff Side Business Pvt Ltd',
+            'business_type' => 'sole_proprietor',
+            'accept_document_processing' => true,
+        ])->assertStatus(409);
+
+        // NOT assertDatabaseCount(0): the store's OWNER already has an
+        // application (that is how the store exists at all). What matters
+        // is that the staff member never got one of their own.
+        $this->assertDatabaseMissing('seller_applications', ['user_id' => $staff->id]);
+    }
 }

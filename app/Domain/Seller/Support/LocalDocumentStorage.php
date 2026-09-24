@@ -19,6 +19,8 @@ final readonly class LocalDocumentStorage implements DocumentStorageInterface
 
     private const BANK_PROOF_DIRECTORY = 'seller-bank-proofs';
 
+    private const RENEWAL_DIRECTORY = 'seller-renewals';
+
     public function store(int $applicationId, UploadedFile $file): string
     {
         // store() generates a random file name, so a user-supplied name
@@ -29,6 +31,11 @@ final readonly class LocalDocumentStorage implements DocumentStorageInterface
     public function storeBankProof(int $sellerProfileId, UploadedFile $file): string
     {
         return $file->store(self::BANK_PROOF_DIRECTORY.'/'.$sellerProfileId, self::DISK);
+    }
+
+    public function storeRenewal(int $sellerProfileId, UploadedFile $file): string
+    {
+        return $file->store(self::RENEWAL_DIRECTORY.'/'.$sellerProfileId, self::DISK);
     }
 
     public function delete(string $path): void

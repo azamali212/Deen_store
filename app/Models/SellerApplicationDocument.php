@@ -24,6 +24,7 @@ final class SellerApplicationDocument extends Model
         'ai_status',
         'ai_findings',
         'ai_checked_at',
+        'file_purged_at',
     ];
 
     // Private-disk path: kept out of any accidental toArray()/JSON dump.
@@ -43,7 +44,14 @@ final class SellerApplicationDocument extends Model
             // payout bank number.
             'ai_findings' => 'encrypted:array',
             'ai_checked_at' => 'immutable_datetime',
+            'file_purged_at' => 'immutable_datetime',
         ];
+    }
+
+    /** P9-2 — the row outlives the file. */
+    public function isPurged(): bool
+    {
+        return $this->file_purged_at !== null;
     }
 
     public function application(): BelongsTo

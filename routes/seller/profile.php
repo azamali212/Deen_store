@@ -28,6 +28,19 @@ Route::middleware([
         Route::delete('logo', [SellerProfileController::class, 'deleteLogo'])->name('logo.destroy');
 
         // P6-2 — proof that the payout account belongs to this seller.
+        // P9-4 — rename. C6 locked store_name at approval; this is the way
+        // to change it without closing the shop and starting over.
+        Route::post('name', [SellerProfileController::class, 'requestNameChange'])->name('name.request');
+        Route::delete('name', [SellerProfileController::class, 'withdrawNameChange'])->name('name.withdraw');
+
+        // P8-5 / P8-6 — the seller's exit and the way back. Both sit inside
+        // the normal seller group: after closing, the OWNER keeps their
+        // seller role precisely so this route stays reachable (C39).
+        Route::post('close', [SellerProfileController::class, 'close'])->name('close');
+        Route::post('reopen', [SellerProfileController::class, 'requestReopen'])->name('reopen');
+
+        // C35 — also a billable AI call made before the file is stored.
         Route::post('bank/statement', [SellerProfileController::class, 'uploadBankProof'])
+            ->middleware('throttle:seller-bank-proof')
             ->name('bank.statement');
     });

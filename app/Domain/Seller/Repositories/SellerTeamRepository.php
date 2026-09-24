@@ -37,6 +37,11 @@ final readonly class SellerTeamRepository implements SellerTeamRepositoryInterfa
         return $this->team->forStore($sellerProfileId)->get();
     }
 
+    public function activeForStore(int $sellerProfileId): Collection
+    {
+        return $this->team->activeForStore($sellerProfileId)->get();
+    }
+
     public function findForStore(int $memberId, int $sellerProfileId): ?SellerTeamMember
     {
         return $this->team->byIdForStore($memberId, $sellerProfileId)->first();

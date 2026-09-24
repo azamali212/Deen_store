@@ -35,6 +35,7 @@ final readonly class SellerApplicationService
         private SellerProfileRepositoryInterface $profiles,
         private SellerDocumentVerificationService $verification,
         private SellerTeamRepositoryInterface $team,
+        private SellerKycService $kyc,
     ) {}
 
     /**
@@ -53,6 +54,15 @@ final readonly class SellerApplicationService
 
         if ($this->applications->findForUser($user->id) !== null) {
             throw SellerApplicationAlreadyExistsException::forUser($user->id);
+        }
+
+        // C36 — P7-1 ("one person, one store") was only checked when
+        // someone was INVITED. A staff member could still fill in a whole
+        // application, pay for the AI checks, and only hit the wall at
+        // approval. The answer is knowable right here, so it is answered
+        // right here.
+        if ($this->team->liveForUser((int) $user->id) !== null) {
+            throw SellerApplicationAlreadyExistsException::alreadyInAStore((int) $user->id);
         }
 
         $this->ensureStoreNameAvailable($dto->storeName);
@@ -154,10 +164,51 @@ final readonly class SellerApplicationService
             // user in" has exactly one code path from the very first day.
             $this->team->createOwner((int) $profile->id, (int) $application->user_id);
 
+            // P8-1 — lift the expiry DATES out of the encrypted findings
+            // into plain, indexed columns. This is the only way a scheduled
+            // job can ever find an expiring seller: encrypted values cannot
+            // be queried. The identity numbers stay encrypted where they are.
+            $expiry = $this->kycExpiryFrom($application);
+
+            if ($expiry !== []) {
+                $profile = $this->profiles->update($profile, $expiry);
+                // A licence that already expires next month should say so
+                // from day one, not wait for the first nightly run.
+                $profile = $this->kyc->refresh($profile)['profile'];
+            }
+
             $application->user->assignRole(SystemRole::SELLER->value);
 
             return [$application, $profile];
         });
+    }
+
+    /**
+     * @return array<string, string> profile column => YYYY-MM-DD
+     */
+    private function kycExpiryFrom(SellerApplication $application): array
+    {
+        $attributes = [];
+
+        foreach ($application->documents as $document) {
+            $column = $document->document_type->expiryColumn();
+            $field = $document->document_type->expiryField();
+
+            if ($column === null || $field === null) {
+                continue;
+            }
+
+            $value = $document->aiFields()[$field] ?? null;
+
+            // AI may be off, or may not have read a date at all — then the
+            // column stays NULL, which means "nothing known", NOT expired
+            // (C27).
+            if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1) {
+                $attributes[$column] = $value;
+            }
+        }
+
+        return $attributes;
     }
 
     public function reject(int $applicationId, ReviewSellerApplicationDTO $dto): SellerApplication

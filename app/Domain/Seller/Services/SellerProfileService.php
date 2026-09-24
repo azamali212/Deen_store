@@ -10,15 +10,22 @@ use App\Domain\Seller\Contracts\LogoStorageInterface;
 use App\Domain\Seller\DTO\UpdateSellerProfileDTO;
 use App\Domain\Seller\Enums\BankVerificationStatus;
 use App\Domain\Seller\Enums\SellerDocumentType;
+use App\Domain\Seller\Enums\SellerProfileStatus;
 use App\Domain\Seller\Exceptions\DocumentRejectedByAiException;
 use App\Domain\Seller\Exceptions\InvalidBankVerificationStateException;
+use App\Domain\Seller\Exceptions\InvalidSellerStatusTransitionException;
 use App\Domain\Seller\Enums\SellerTeamRole;
-use App\Domain\Seller\Exceptions\SellerProfileNotFoundException;
+use App\Domain\Seller\Exceptions\SellerStoreClosedException;
 use App\Domain\Seller\Exceptions\SellerStoreSuspendedException;
+use App\Domain\Seller\Exceptions\StoreClosureNotConfirmedException;
+use App\Domain\Seller\Exceptions\DuplicateStoreNameException;
+use App\Domain\Seller\Exceptions\InvalidStoreNameChangeException;
+use App\Domain\Seller\Repositories\Contracts\SellerApplicationRepositoryInterface;
 use App\Domain\Seller\Repositories\Contracts\SellerProfileRepositoryInterface;
 use App\Models\SellerProfile;
 use App\Models\SellerTeamMember;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 final readonly class SellerProfileService
@@ -30,6 +37,7 @@ final readonly class SellerProfileService
         private DocumentStorageInterface $documents,
         private DocumentVerifierInterface $verifier,
         private SellerTeamService $team,
+        private SellerApplicationRepositoryInterface $applications,
     ) {}
 
     /**
@@ -68,7 +76,7 @@ final readonly class SellerProfileService
     {
         $membership = $this->membershipFor($userId);
 
-        $this->ensureNotSuspended($membership->sellerProfile);
+        $this->ensureStoreOpen($membership->sellerProfile);
 
         if ($dto->profileFields !== []) {
             $this->team->ensureCan(
@@ -166,6 +174,152 @@ final readonly class SellerProfileService
             'changed_fields' => $changedFields,
             'bank_change' => $bankChange,
         ];
+    }
+
+    /**
+     * P9-4 — C6 locked store_name at approval, which was right: the admin
+     * verified it. But "forever" was wrong — businesses rebrand, and the
+     * only route was to close and start over. The seller asks; an admin
+     * approves.
+     *
+     * C45 — nothing user-visible changes while it is pending. The old name
+     * stays live until the moment it is approved.
+     */
+    public function requestNameChange(int $userId, string $storeName): SellerProfile
+    {
+        $profile = $this->authorise(
+            $userId,
+            fn (SellerTeamRole $role): bool => $role->canRenameStore(),
+            'change the store name',
+        );
+
+        if ($profile->hasNameChangePending()) {
+            throw InvalidStoreNameChangeException::alreadyPending();
+        }
+
+        if ($storeName === $profile->store_name) {
+            throw InvalidStoreNameChangeException::sameAsCurrent();
+        }
+
+        // C44, first of two checks. The second runs inside the approval
+        // transaction, because another store can take this name in between.
+        $this->ensureStoreNameIsFree($storeName, (int) $profile->id);
+
+        return $this->profiles->update($profile, [
+            'pending_store_name' => $storeName,
+            'store_name_requested_at' => now(),
+        ]);
+    }
+
+    public function withdrawNameChange(int $userId): SellerProfile
+    {
+        $profile = $this->authorise(
+            $userId,
+            fn (SellerTeamRole $role): bool => $role->canRenameStore(),
+            'change the store name',
+        );
+
+        if (! $profile->hasNameChangePending()) {
+            throw InvalidStoreNameChangeException::nothingPending((int) $profile->id);
+        }
+
+        return $this->profiles->update($profile, [
+            'pending_store_name' => null,
+            'store_name_requested_at' => null,
+        ]);
+    }
+
+    /**
+     * A name must be free in BOTH tables. Every approved store also has a
+     * frozen application row carrying the name it was approved under, and
+     * that row is the record of what the admin actually verified — so it
+     * keeps its claim on that name.
+     */
+    private function ensureStoreNameIsFree(string $storeName, ?int $exceptProfileId = null): void
+    {
+        if ($this->profiles->storeNameExists($storeName, $exceptProfileId)
+            || $this->applications->storeNameExists($storeName)) {
+            throw DuplicateStoreNameException::taken($storeName);
+        }
+    }
+
+    /**
+     * P8-5 — the seller's own exit.
+     *
+     * Goes through authorise(), so a SUSPENDED store is refused (C30):
+     * closing must never become the escape hatch from an investigation.
+     * An already-closed store is refused by the same guard.
+     */
+    public function close(int $userId, string $confirmStoreName, ?string $reason): SellerProfile
+    {
+        return DB::transaction(function () use ($userId, $confirmStoreName, $reason): SellerProfile {
+            $profile = $this->authorise(
+                $userId,
+                fn (SellerTeamRole $role): bool => $role->canCloseStore(),
+                'close the store',
+            );
+
+            // C34 — a one-click button that dissolves a business is a bug.
+            if (trim($confirmStoreName) !== $profile->store_name) {
+                throw StoreClosureNotConfirmedException::nameDoesNotMatch();
+            }
+
+            $profile = $this->profiles->update($profile, [
+                'status' => SellerProfileStatus::CLOSED->value,
+                'closed_at' => now(),
+                'closure_reason' => $reason,
+                'reopen_requested_at' => null,
+            ]);
+
+            // C31/C39 — access goes, rows stay, the owner keeps their role
+            // so they can still ask for the store back.
+            $this->team->stripStoreRoles((int) $profile->id);
+
+            return $profile;
+        });
+    }
+
+    /**
+     * P8-6 — the seller asks; an admin decides. No new application and no
+     * re-uploading everything, but also no closing to duck a review and
+     * quietly reopening later.
+     */
+    public function requestReopen(int $userId): SellerProfile
+    {
+        $membership = $this->membershipFor($userId);
+        $profile = $membership->sellerProfile;
+
+        // NOT authorise(): that refuses a closed store, and closed is
+        // exactly the state this method exists for.
+        $this->team->ensureCan(
+            $membership,
+            fn (SellerTeamRole $role): bool => $role->canCloseStore(),
+            'reopen the store',
+        );
+
+        if (! $profile->isClosed()) {
+            throw InvalidSellerStatusTransitionException::cannot('reopened', $profile->status);
+        }
+
+        if ($profile->reopen_requested_at !== null) {
+            throw InvalidSellerStatusTransitionException::reopenAlreadyRequested();
+        }
+
+        return $this->profiles->update($profile, ['reopen_requested_at' => now()]);
+    }
+
+    /**
+     * Phase 8a — a KYC renewal replaces the owner's own identity document,
+     * so only the owner may upload one, and never while the store is shut.
+     * Runs BEFORE the billable AI call, like every other guard (C25/C35).
+     */
+    public function guardKycDocuments(int $userId): SellerProfile
+    {
+        return $this->authorise(
+            $userId,
+            fn (SellerTeamRole $role): bool => $role->canManageKycDocuments(),
+            'manage identity documents',
+        );
     }
 
     /**
@@ -307,16 +461,30 @@ final readonly class SellerProfileService
     {
         $membership = $this->membershipFor($userId);
 
-        $this->ensureNotSuspended($membership->sellerProfile);
+        $this->ensureStoreOpen($membership->sellerProfile);
         $this->team->ensureCan($membership, $check, $action);
 
         return $membership->sellerProfile;
     }
 
-    private function ensureNotSuspended(SellerProfile $profile): void
+    /**
+     * C33 — renamed from ensureNotSuspended() when closure arrived. Every
+     * write guard already called this one method, so they all picked up
+     * the new state for free. Had each guard asked isSuspended() for
+     * itself, one would have been missed and a CLOSED store would still
+     * be editable.
+     *
+     * The two states get DIFFERENT messages on purpose: a suspension is
+     * appealed, a closure is reopened on request.
+     */
+    private function ensureStoreOpen(SellerProfile $profile): void
     {
         if ($profile->isSuspended()) {
             throw SellerStoreSuspendedException::forProfile($profile->id);
+        }
+
+        if ($profile->isClosed()) {
+            throw SellerStoreClosedException::forProfile($profile->id);
         }
     }
 
