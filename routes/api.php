@@ -17,3 +17,7 @@ require __DIR__.'/user/profile.php';
 require __DIR__.'/user/admin.php';
 require __DIR__.'/audit/admin.php';
 require __DIR__.'/moderation/admin.php';
+require __DIR__.'/seller/application.php';
+require __DIR__.'/seller/admin.php';
+require __DIR__.'/seller/profile.php';
+require __DIR__.'/seller/team.php';

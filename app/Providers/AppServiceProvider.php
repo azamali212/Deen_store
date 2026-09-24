@@ -10,6 +10,19 @@ use App\Domain\Auth\Repositories\PasswordHistoryRepository;
 use App\Domain\Auth\Repositories\TwoFactorRepository;
 use App\Domain\Auth\Contracts\GoogleTokenVerifierInterface;
 use App\Domain\Auth\Support\GoogleIdTokenVerifier;
+use App\Domain\Seller\Contracts\DocumentStorageInterface;
+use App\Domain\Seller\Contracts\DocumentVerifierInterface;
+use App\Domain\Seller\Contracts\LogoStorageInterface;
+use App\Domain\Seller\Repositories\Contracts\SellerApplicationRepositoryInterface;
+use App\Domain\Seller\Repositories\Contracts\SellerProfileRepositoryInterface;
+use App\Domain\Seller\Repositories\Contracts\SellerTeamRepositoryInterface;
+use App\Domain\Seller\Repositories\SellerApplicationRepository;
+use App\Domain\Seller\Repositories\SellerProfileRepository;
+use App\Domain\Seller\Repositories\SellerTeamRepository;
+use App\Domain\Seller\Support\GeminiDocumentVerifier;
+use App\Domain\Seller\Support\LocalDocumentStorage;
+use App\Domain\Seller\Support\NullDocumentVerifier;
+use App\Domain\Seller\Support\LocalLogoStorage;
 use App\Domain\User\Contracts\AvatarStorageInterface;
 use App\Domain\User\Contracts\SmsGatewayInterface;
 use App\Domain\User\Repositories\Contracts\UserAddressRepositoryInterface;
@@ -41,6 +54,22 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(AvatarStorageInterface::class, LocalAvatarStorage::class);
         $this->app->bind(SmsGatewayInterface::class, LogSmsGateway::class);
         $this->app->bind(GoogleTokenVerifierInterface::class, GoogleIdTokenVerifier::class);
+
+        // Seller domain
+        $this->app->bind(SellerApplicationRepositoryInterface::class, SellerApplicationRepository::class);
+        $this->app->bind(SellerProfileRepositoryInterface::class, SellerProfileRepository::class);
+        $this->app->bind(SellerTeamRepositoryInterface::class, SellerTeamRepository::class);
+        $this->app->bind(DocumentStorageInterface::class, LocalDocumentStorage::class);
+        $this->app->bind(LogoStorageInterface::class, LocalLogoStorage::class);
+
+        // KYC documents go to Gemini ONLY when explicitly switched on —
+        // and it must only be switched on with the PAID tier (billing).
+        // Default: NullDocumentVerifier, nothing leaves the server.
+        $this->app->bind(DocumentVerifierInterface::class, function ($app): DocumentVerifierInterface {
+            return config('services.gemini.document_verification.enabled')
+                ? $app->make(GeminiDocumentVerifier::class)
+                : new NullDocumentVerifier();
+        });
     }
 
     /**

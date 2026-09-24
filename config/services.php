@@ -50,6 +50,15 @@ return [
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-3.6-flash'),
+
+        // Seller KYC document checks (BLUEPRINT.txt section 10).
+        // OFF by default ON PURPOSE: CNIC scans and bank statements may only
+        // be sent to the PAID Gemini tier — the free tier's terms forbid
+        // sensitive personal data. Turn on only after billing is enabled.
+        'document_verification' => [
+            'enabled' => (bool) env('SELLER_AI_VERIFICATION_ENABLED', false),
+            'model' => env('GEMINI_VERIFICATION_MODEL', env('GEMINI_MODEL', 'gemini-3.6-flash')),
+        ],
     ],
 
     'google' => [

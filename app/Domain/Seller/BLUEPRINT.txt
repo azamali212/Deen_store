@@ -1,143 +1,355 @@
 ================================================================================
-SELLER ONBOARDING MODULE — PROTOTYPE / BLUEPRINT (not built yet)
+SELLER ONBOARDING MODULE — BLUEPRINT v2
 ================================================================================
-Status: PLANNING ONLY. Nothing in this file exists as code yet — this is the
-agreed structure before we start writing files. Confirmed decisions so far:
-  - Documents required: cnic_front, cnic_back, business_license,
-    tax_certificate, bank_statement (5 types)
-  - Rejection flow: user edits the SAME application and resubmits (status
-    goes rejected -> pending again), not a brand-new application row.
-  - Bank account number must NOT be stored plaintext (encrypted cast, or
-    last-4-digits only) — enterprise/security requirement, decided upfront.
+Status : Phases 1-7 BUILT and green (211 tests). Phase 8 PLANNED, not built.
+Updated: 2026-09-24
+Code   : app/Domain/Seller/ — see section 5 for the file tree.
+Postman: postman/Seller_Phase2*, _Phase3_Admin*, _Phase4_Profile*,
+         _Phase6_AdminControl*, _Phase7_Team*
+Rule   : decide first, write it here, THEN code. Every correction that cost
+         a debugging round is written down as C<n> so it is not repeated.
+
+LIVE WARNING (2026-09-24): .env currently has
+  SELLER_AI_VERIFICATION_ENABLED=true  with a FREE-tier Gemini key.
+Section 10 says this must stay false until PAID billing is enabled — the
+free tier's terms forbid sensitive personal data, and CNIC scans are
+exactly that. Set it back to false until billing is on.
+
+--------------------------------------------------------------------------------
+0. DECISIONS
+--------------------------------------------------------------------------------
+Carried over from v1:
+  D1. 5 required documents: cnic_front, cnic_back, business_license,
+      tax_certificate, bank_statement.
+  D2. Rejection flow: the user edits the SAME application row and resubmits
+      (rejected -> pending). Never a new row.
+
+Decided in the v1 review:
+  D3. Bank account: the FULL number is stored, encrypted with Laravel's
+      `encrypted` cast. (Payouts need the full number — storing only the
+      last 4 digits would make paying a seller impossible.) A separate
+      bank_account_last4 column is kept for display. The full number is
+      NEVER returned by any API; responses only show "****1234".
+  D4. Tamper-evident (hash-chained) audit log: wanted, but LATER, as its
+      own task in the Audit domain. Not part of this module.
+  D5. No `under_review` status for now. Concurrent admin review is rare at
+      this stage; it can be added later.
+  D6. Document files: pdf, jpg, jpeg, png — max 10 MB each.
+  D7. Document storage: local disk now, behind DocumentStorageInterface
+      (swap to S3 later without touching anything else).
+      IMPORTANT: the PRIVATE `local` disk — NOT `public` like avatars.
+      CNIC and bank scans must never be reachable by a public URL. Admins
+      get them only through an admin-only download endpoint.
+  D8. business_type is an enum: sole_proprietor, partnership, company.
+  D9. Every state change is audited (same pattern as every other domain:
+      Audit listener -> WriteAuditLogJob). See section 6.
+  D10. Admin routes: auth:sanctum + active + role:super_admin|platform_admin
+       (NOT "|admin" — that role never existed; the same bug was already
+       fixed across the User domain). Every route group gets `active`.
+  D11. All module exceptions extend App\Exceptions\DomainException and are
+       mapped in bootstrap/app.php IN THE SAME STEP they are created, so the
+       "exception exists but returns a raw 500" gap (Address, Auth) can't
+       happen a third time.
+
+Corrections found while re-reading v1:
+  C1. v1 notified admins the moment the application row was created — but
+      at that moment it has ZERO documents, so the admin opens an empty
+      application. Fix: new `draft` status.
+         create (draft) -> upload 5 docs -> Submit (draft -> pending)
+         -> admins notified.
+      Submit refuses if any document is missing — this is exactly what
+      v1's MissingRequiredDocumentsException was meant for.
+  C2. Documents can be uploaded/replaced ONLY while the application is
+      draft or rejected. Otherwise a user could swap their CNIC after an
+      admin approved it.
+  C3. v1 assigned the 'seller' role twice (inside the approve action AND in
+      UpgradeUserRoleOnApprovalListener). Now it happens ONCE, inside
+      ApproveSellerApplicationAction, in the same DB transaction as the
+      status change and the seller_profiles insert — so "approved but no
+      seller role" can never happen. That listener is removed; listeners
+      are only for side-effects (emails, audit).
+  C4. The 'customer' role is KEPT on approval (assignRole adds, it does not
+      replace) — a seller can still shop.
+  C5. Customer routes have NO {id}. A user can only ever have ONE
+      application (UNIQUE user_id), so every customer route resolves the
+      application from $request->user() — same idea as routes/user/
+      profile.php. No IDOR surface, so no SellerApplicationPolicy is
+      needed. Admin access is enforced by route middleware, like Audit and
+      Moderation.
+  C6. store_name, business_name, business_type are what the admin verified,
+      so they are LOCKED after approval. The seller profile can only edit:
+      logo, description, business address, bank details.
+  C7. Changing bank details is the classic payout-fraud move (hijack the
+      account -> change the bank -> steal payouts). So a bank change is
+      audited at WARNING severity AND the seller gets an email
+      "your payout bank account was changed" (same idea as
+      PasswordChangedNotification).
+  C8. Re-uploading a document deletes the old file from storage (same as
+      avatar replacement) — no orphaned CNIC scans left on disk.
+  C9. `status` columns are plain strings and the value is always set in
+      CODE, never left to a DB default (lesson from users.status + SQLite).
+  C10. v1's `uploaded_at` column dropped — `updated_at` already records the
+       last (re-)upload time.
+  C11. Reaching the seller panel after approval. EnsurePanelAccess checks
+       the `panel.seller.access` PERMISSION (which the seller role brings),
+       not which login endpoint issued the token. So after approval:
+         - login responses return accessible_panels: ["customer","seller"]
+         - the frontend shows "Switch to Seller Dashboard" and keeps using
+           the SAME token — no second login (Amazon-style)
+       This is the main path on purpose: a customer who signed up with
+       Google has a random password and could never use the password-based
+       /v1/seller/auth/login. That endpoint still works for everyone else.
+       Seller self-registration stays disabled (SellerAuthController
+       already returns null from selfRegistrationRole()).
+
+Added while building Phase 3:
+  C12. An admin can never review their OWN application (segregation of
+       duties) -> CannotReviewOwnApplicationException (403). Matters here
+       because the super admin is also a normal customer account.
+  C13. Approve/reject re-read the application row with lockForUpdate()
+       inside the transaction. Two admins clicking at the same moment:
+       the second waits, then sees the new status and gets a 409 — no
+       double review, no second seller_profiles row.
+  C14. Admin document download name is generated by us
+       ("application-12-cnic_front.pdf"), never the customer's original
+       file name — nothing user-controlled goes into the
+       Content-Disposition header. A DB row whose file is missing from
+       disk returns a clean 404, not a 500.
+  C15. Approved/Rejected events fire AFTER the transaction commits, so an
+       email is never sent for an approval that was rolled back.
+
+Added while building Phase 4:
+  C16. The store `description` and the logo go through the SAME blocking AI
+       moderation as the user profile bio/avatar (EnforceContentModeration-
+       Action) — they are shown publicly on the storefront.
+       business_address is deliberately NOT moderated: the moderation
+       prompt flags "exposed contact info", which a public store address
+       always is (false positive every time).
+  C17. The logo has its own endpoints (POST/DELETE /v1/seller/profile/logo)
+       instead of riding on PUT /v1/seller/profile — PHP does not parse
+       multipart/form-data bodies on PUT, so a file sent that way arrives
+       empty. Same shape as the user avatar endpoints. Logos use a PUBLIC
+       disk behind LogoStorageInterface (unlike KYC documents).
+  C18. Pre-existing gap fixed: ModerationCheckFailedException (Gemini down
+       or GEMINI_API_KEY missing) was never mapped, so profile/avatar
+       updates crashed with a raw 500. Now 503 with a generic message; the
+       real reason is only logged.
+  C19. Bank fields are all-or-nothing (title + bank name + number together)
+       and the number is normalised before validation (spaces/dashes
+       removed, upper-cased), so the same IBAN typed two ways is not a
+       "change". Accepted: Pakistani IBAN (PK + 2 digits + 4 letters +
+       16 digits) or 8–24 digits. Adding the FIRST account = NOTICE audit;
+       REPLACING one = WARNING audit. Both email the seller.
+  C20. Seller profile routes also carry `panel:seller`, so they depend on
+       exactly the permission the seller dashboard uses (C11).
 
 
 --------------------------------------------------------------------------------
-1. WORKFLOW DIAGRAM (full lifecycle, both actors)
+1. STATUS LIFECYCLE (seller_applications.status)
+--------------------------------------------------------------------------------
+
+             edit info / upload / replace docs
+                        ┌──────┐
+                        ▼      │
+      create ───►   [ draft ] ─┘
+                        │
+                        │ submit  (all 5 docs required)
+                        ▼
+                   [ pending ] ◄──────────────────────┐
+                    │        │                        │
+            approve │        │ reject (reason         │ resubmit
+                    │        │  required)             │ (all 5 docs required,
+                    ▼        ▼                        │  reason is cleared)
+            [ approved ]  [ rejected ] ───────────────┘
+              (final)       ▲      │
+                            └──────┘
+                 edit info / upload / replace docs
+
+  What is allowed in each status:
+    draft    : customer edits info, uploads docs, submits
+    pending  : customer can only view; admin approves or rejects
+    rejected : customer edits info, re-uploads docs, resubmits
+    approved : application is frozen; seller now manages seller_profile
+
+  Anything else -> InvalidApplicationStatusTransitionException (409).
+
+
+--------------------------------------------------------------------------------
+2. WORKFLOW — step by step, both actors
 --------------------------------------------------------------------------------
 
   CUSTOMER                         SYSTEM                          ADMIN
   ────────                         ──────                          ─────
 
-  [Logged-in customer,
-   already has a profile]
-        │
-        │ 1) Click "Start Business"
-        ▼
-  POST /seller/applications
-  { store_name, business_name,
-    business_type }
+  1) POST /v1/seller/application
+     { store_name, business_name,
+       business_type }
         │
         ▼
-  SubmitSellerApplicationAction
+  CreateSellerApplicationAction
+        ├─► seller_applications row (status = draft)
+        │   409 if the user already has one
+        │   422 if store_name is taken
         │
-        ├─► seller_applications row created (status = pending)
-        │
-        └─► event: SellerApplicationSubmitted
-                    │
-                    ▼
-            NotifyAdminsOfNewApplicationListener
-                    │
-                    ▼
-            SellerApplicationSubmittedNotification ───────────────► [Admin inbox/email]
-        │
-        │ 2) Upload documents (one call per type,
-        │    repeat 5x: cnic_front, cnic_back,
-        │    business_license, tax_certificate,
-        │    bank_statement)
-        ▼
-  POST /seller/applications/{id}/documents
-  { document_type, file }
+  2) POST /v1/seller/application/documents
+     { document_type, file }        (x5, any order)
         │
         ▼
   UploadApplicationDocumentAction
+        ├─► file -> PRIVATE disk
+        ├─► updateOrCreate per document_type (old file deleted)
+        └─► event: SellerDocumentUploaded (audit)
         │
-        └─► seller_application_documents row
-            (updateOrCreate per document_type —
-             re-uploading the same type replaces it,
-             never piles up duplicates)
-        │
-        │ 3) Waits (checks status or waits for email)
-        │                                                              │
-        │                                                              ▼
-        │                                                  3) Admin reviews:
-        │                                                     GET /admin/seller-applications
-        │                                                     GET /admin/seller-applications/{id}
-        │                                                     (business info + all 5 document links)
-        │                                                              │
-        │                                                              ▼
-        │                                                  POST /admin/seller-applications/{id}/review
-        │                                                  { decision: approve | reject, reason? }
-        │                                                              │
-        │                                        ┌─────────────────────┴─────────────────────┐
-        │                                        ▼                                           ▼
-        │                           ApproveSellerApplicationAction            RejectSellerApplicationAction
-        │                                        │                                           │
-        │                                        ├─► status = approved                       ├─► status = rejected
-        │                                        ├─► seller_profiles row CREATED              ├─► rejection_reason saved
-        │                                        ├─► user gets 'seller' role (spatie)         │
-        │                                        │                                            │
-        │                         event: SellerApplicationApproved              event: SellerApplicationRejected
-        │                                        │                                            │
-        │                     ┌──────────────────┴──────────────┐                             │
-        │                     ▼                                 ▼                             ▼
-        │      UpgradeUserRoleOnApprovalListener      NotifyUserOfApprovalListener   NotifyUserOfRejectionListener
-        │                     │                                 │                             │
-        │            (assignRole('seller'))          SellerApplicationApproved       SellerApplicationRejected
-        │                                             Notification                    Notification
-        │                                                       │                             │
-        │  ◄────────────────────────────────────────────────────┘                             │
-        │    "Your business is approved!"                                                      │
-        │  ◄─────────────────────────────────────────────────────────────────────────────────────┘
-        │    "Your application was rejected: {reason}"
+  3) POST /v1/seller/application/submit
         │
         ▼
-  ┌─────────────────────────┐             ┌──────────────────────────────────────┐
-  │ IF APPROVED              │             │ IF REJECTED                          │
-  │ 4) Complete business      │            │ 4) Fix the flagged document(s),       │
-  │    profile:                │           │    re-upload, then resubmit:          │
-  │ PUT /seller/profile        │           │ PATCH /seller/applications/{id}       │
-  │ { logo, description,       │           │ (status: rejected -> pending again,   │
-  │   bank_account_title,      │           │  admin re-notified — loops back       │
-  │   bank_name,                │          │  to step 3)                           │
-  │   bank_account_last4,       │          └──────────────────────────────────────┘
-  │   business_address, ... }   │
-  └─────────────────────────┘
+  SubmitSellerApplicationAction
+        ├─► all 5 present? no -> 422 + list of missing types
+        ├─► status: draft -> pending, submitted_at = now
+        └─► event: SellerApplicationSubmitted
+                    ├─► NotifyAdminsOfApplicationListener ──────────► [admin email
+                    └─► AuditSellerApplicationSubmittedListener         + database
+                                                                         notification]
+  4) GET /v1/seller/application                                         │
+     (own status, reason, doc list)                                     ▼
+                                                    5) GET /v1/admin/seller-applications
+                                                          ?status=pending (drafts never listed)
+                                                       GET /v1/admin/seller-applications/{id}
+                                                       GET /v1/admin/seller-applications/{id}
+                                                           /documents/{type}   (streams file)
+                                                                        │
+                                                                        ▼
+                                                    6) POST /v1/admin/seller-applications/{id}/review
+                                                       { decision: approve|reject,
+                                                         reason (required if reject) }
+                                                                        │
+                                       ┌────────────────────────────────┴───────────┐
+                                       ▼                                            ▼
+                          ApproveSellerApplicationAction              RejectSellerApplicationAction
+                          ONE DB TRANSACTION:                          ├─► status = rejected
+                            ├─► status = approved                      ├─► rejection_reason saved
+                            ├─► seller_profiles row created            └─► reviewed_by / reviewed_at
+                            ├─► assignRole('seller')                           │
+                            └─► reviewed_by / reviewed_at                      │
+                                       │                                       │
+                          event: SellerApplicationApproved          event: SellerApplicationRejected
+                            ├─► NotifyUserOfApprovalListener          ├─► NotifyUserOfRejectionListener
+                            └─► AuditSellerApplicationApproved...     └─► AuditSellerApplicationRejected...
+                                       │                                       │
+  ◄────────────────────────────────────┘                                       │
+  "Your business is approved!"                                                 │
+  ◄────────────────────────────────────────────────────────────────────────────┘
+  "Your application was rejected: {reason}"
+
+  ┌──────────────────────────────────┐    ┌───────────────────────────────────┐
+  │ IF APPROVED                      │    │ IF REJECTED                       │
+  │ 7) GET  /v1/seller/profile       │    │ 7) PATCH /v1/seller/application   │
+  │    PUT  /v1/seller/profile       │    │    (fix info, if needed)          │
+  │    { logo?, description?,        │    │    POST .../documents             │
+  │      business_address?,          │    │    (re-upload flagged docs)       │
+  │      bank_account_title?,        │    │    POST .../submit                │
+  │      bank_name?,                 │    │    rejected -> pending,           │
+  │      bank_account_number? }      │    │    reason cleared,                │
+  │    bank changed?                 │    │    event SellerApplication-       │
+  │      -> WARNING audit            │    │    Resubmitted -> admins emailed  │
+  │      -> email to seller          │    │    (loops back to step 5)         │
+  └──────────────────────────────────┘    └───────────────────────────────────┘
         │
         ▼
-  UpdateSellerProfileAction
-        │
-        └─► seller_profiles row updated
-        │
-        ▼
-  [Business is live — seller can now list products (future: Catalog domain)]
+  [Business is live — seller can list products later (future: Catalog domain)]
 
 
 --------------------------------------------------------------------------------
-2. DATABASE TABLES
+3. ENDPOINTS
+--------------------------------------------------------------------------------
+
+  routes/seller/application.php   middleware: auth:sanctum, active, role:customer
+    POST   /v1/seller/application                    create (draft)
+    GET    /v1/seller/application                    view own application
+    PATCH  /v1/seller/application                    edit info (draft/rejected only)
+    POST   /v1/seller/application/documents          upload/replace one document
+    POST   /v1/seller/application/submit             submit OR resubmit
+
+  routes/seller/admin.php          middleware: auth:sanctum, active,
+                                               role:super_admin|platform_admin
+    GET    /v1/admin/seller-applications             list (?status=, paginated)
+    GET    /v1/admin/seller-applications/{id}        detail + document list
+    GET    /v1/admin/seller-applications/{id}/documents/{type}   download
+    POST   /v1/admin/seller-applications/{id}/review approve | reject
+
+  routes/seller/profile.php        middleware: auth:sanctum, active, role:seller,
+                                               panel:seller
+    GET    /v1/seller/profile                        own business profile
+    PUT    /v1/seller/profile                        description/address/bank (JSON)
+    POST   /v1/seller/profile/logo                   upload/replace logo (C17)
+    DELETE /v1/seller/profile/logo                   remove logo
+
+  All 3 files are required from routes/api.php (watch the missing-trailing-
+  newline gotcha when appending). They do NOT overlap with the existing
+  routes/auth/seller.php (that file is seller-panel LOGIN only).
+
+
+--------------------------------------------------------------------------------
+4. DATABASE TABLES
 --------------------------------------------------------------------------------
 
 seller_applications
-  id, user_id (FK, indexed), store_name, business_name, business_type,
-  status (pending/under_review/approved/rejected), rejection_reason (nullable),
-  reviewed_by (FK users, nullable), reviewed_at (nullable), timestamps
-  UNIQUE(user_id)        -- one active application per user at a time
-  UNIQUE(store_name)     -- no two sellers share a public store name
+  id
+  user_id                FK users, cascadeOnDelete           UNIQUE
+  store_name             string(100)                         UNIQUE
+  business_name          string(150)
+  business_type          string(30)    BusinessType enum
+  status                 string(20)    draft|pending|approved|rejected
+                                       (always set in code — C9)
+  rejection_reason       text, nullable   (cleared on resubmit)
+  submitted_at           timestamp, nullable  (last time it went to pending)
+  reviewed_by            FK users, nullable, nullOnDelete
+  reviewed_at            timestamp, nullable
+  timestamps
+  INDEX(status)          -- the admin list filters by status
 
 seller_application_documents
-  id, seller_application_id (FK), document_type (enum string), file_path,
-  uploaded_at, timestamps
-  UNIQUE(seller_application_id, document_type)  -- re-upload replaces, never duplicates
+  id
+  seller_application_id  FK seller_applications, cascadeOnDelete
+  document_type          string(30)    SellerDocumentType enum
+  file_path              string        path on the PRIVATE disk
+  original_name          string        used as the admin download filename
+  mime_type              string(100)
+  size_bytes             unsigned integer
+  timestamps             (updated_at = last re-upload — C10)
+  UNIQUE(seller_application_id, document_type)   -- re-upload replaces
 
-seller_profiles           -- created ONLY on approval, this is the LIVE business
-  id, user_id (FK, unique), seller_application_id (FK, reference back to how
-  they got approved), store_name, business_name, business_type, logo_path,
-  description, business_address, bank_account_title, bank_name,
-  bank_account_last4 (string(4) — NEVER the full number), status
-  (active/suspended), timestamps
+seller_profiles          -- created ONLY on approval: this is the LIVE business
+  id
+  user_id                FK users, cascadeOnDelete           UNIQUE
+  seller_application_id  FK seller_applications              UNIQUE
+  store_name             string(100)   UNIQUE  ┐ copied from the application,
+  business_name          string(150)           │ LOCKED after approval (C6)
+  business_type          string(30)            ┘
+  logo_path              string, nullable   (PUBLIC disk — logos are public)
+  description            text, nullable
+  business_address       string, nullable
+  bank_account_title     string, nullable
+  bank_name              string, nullable
+  bank_account_number    TEXT, nullable     `encrypted` cast + in $hidden (D3)
+  bank_account_last4     string(4), nullable   display only
+  status                 string(20)    active|suspended (set in code)
+  timestamps
+
+  Notes on the encrypted bank_account_number column:
+  - It is encrypted with APP_KEY. If APP_KEY ever changes without being
+    listed in APP_PREVIOUS_KEYS, every stored bank number becomes
+    unreadable. Back up APP_KEY.
+  - Encrypted values can't be searched, filtered or indexed in SQL. That's
+    fine — we never look anything up by bank number.
+  - Column type is TEXT because the ciphertext is much longer than the
+    original number.
+  - It is ALSO in the model's $hidden, so even an accidental toArray() /
+    JSON dump can't leak it. Resources only expose "****" + last4.
 
 
 --------------------------------------------------------------------------------
-3. FILE TREE — everything this module will contain, layer by layer
+5. FILE TREE — everything this module will contain
 --------------------------------------------------------------------------------
 
 database/migrations/
@@ -145,113 +357,683 @@ database/migrations/
 ├── xxxx_create_seller_application_documents_table.php
 └── xxxx_create_seller_profiles_table.php
 
+database/factories/
+├── SellerApplicationFactory.php          (states: pending, approved, rejected)
+├── SellerApplicationDocumentFactory.php
+└── SellerProfileFactory.php
+
 app/Models/
-├── SellerApplication.php          -- belongsTo User, hasMany documents
-├── SellerApplicationDocument.php  -- belongsTo SellerApplication
-└── SellerProfile.php              -- belongsTo User, belongsTo SellerApplication
+├── SellerApplication.php          -- belongsTo User, hasMany documents,
+│                                     belongsTo reviewer; HasFactory
+├── SellerApplicationDocument.php  -- belongsTo SellerApplication; HasFactory
+└── SellerProfile.php              -- belongsTo User, belongsTo
+                                      SellerApplication; encrypted cast; HasFactory
 
 app/Domain/Seller/
 ├── Enums/
-│   ├── SellerApplicationStatus.php   (pending, under_review, approved, rejected)
-│   └── SellerDocumentType.php        (cnic_front, cnic_back, business_license,
-│                                       tax_certificate, bank_statement)
+│   ├── SellerApplicationStatus.php   draft, pending, approved, rejected
+│   ├── SellerDocumentType.php        the 5 types + required()
+│   ├── BusinessType.php              sole_proprietor, partnership, company
+│   └── SellerProfileStatus.php       active, suspended
 │
-├── Exceptions/
-│   ├── SellerApplicationAlreadyExistsException.php   -- user already has one pending/approved
-│   ├── SellerApplicationNotFoundException.php
-│   ├── InvalidApplicationStatusTransitionException.php -- e.g. can't review twice
-│   ├── DuplicateStoreNameException.php
-│   ├── MissingRequiredDocumentsException.php          -- can't submit for review w/o all 5
-│   └── SellerProfileNotFoundException.php
+├── Exceptions/                       (all extend App\Exceptions\DomainException)
+│   ├── SellerApplicationAlreadyExistsException.php       409
+│   ├── SellerApplicationNotFoundException.php            404
+│   ├── InvalidApplicationStatusTransitionException.php   409
+│   ├── DuplicateStoreNameException.php                   422
+│   ├── MissingRequiredDocumentsException.php             422 (+ missing list)
+│   ├── SellerProfileNotFoundException.php                404
+│   ├── EmailNotVerifiedForSellingException.php           403 (Q1)
+│   ├── SellerDocumentNotFoundException.php               404 (Phase 3)
+│   └── CannotReviewOwnApplicationException.php           403 (C12)
 │
 ├── DTO/
-│   ├── SubmitSellerApplicationDTO.php
+│   ├── CreateSellerApplicationDTO.php
+│   ├── UpdateSellerApplicationDTO.php     (edit info while draft/rejected)
 │   ├── UploadApplicationDocumentDTO.php
 │   ├── ReviewSellerApplicationDTO.php     (decision, reason, reviewerId)
-│   ├── ResubmitSellerApplicationDTO.php
 │   └── UpdateSellerProfileDTO.php
 │
-├── Repositories/
+├── Repositories/                  (same layout as the User domain)
 │   ├── Contracts/
 │   │   ├── SellerApplicationRepositoryInterface.php
 │   │   └── SellerProfileRepositoryInterface.php
-│   ├── DTO/  (CreateSellerApplicationData, CreateSellerProfileData, ...)
+│   ├── Queries/
+│   │   ├── SellerApplicationQuery.php     (byUser, byStatus, withDocuments)
+│   │   └── SellerProfileQuery.php
 │   ├── SellerApplicationRepository.php
 │   └── SellerProfileRepository.php
 │
 ├── Contracts/
-│   └── DocumentStorageInterface.php   -- swappable: LocalDocumentStorage now,
-│                                          S3DocumentStorage later (mirrors
-│                                          AvatarStorageInterface pattern)
+│   ├── DocumentStorageInterface.php   store(), delete(), download()
+│   │                                  -- no url(): files are private (D7)
+│   └── LogoStorageInterface.php       store(), delete(), url() — public (C17)
 ├── Support/
-│   └── LocalDocumentStorage.php
+│   ├── LocalDocumentStorage.php       disk 'local',
+│   │                                  dir seller-documents/{applicationId}
+│   └── LocalLogoStorage.php           disk 'public', dir seller-logos/{profileId}
 │
 ├── Services/
-│   ├── SellerApplicationService.php   -- submit, resubmit, review (approve/reject)
-│   ├── SellerDocumentService.php      -- upload/replace documents, checks all 5 present
-│   └── SellerProfileService.php       -- post-approval profile updates
+│   ├── SellerApplicationService.php   create, update, submit/resubmit,
+│   │                                  approve (transaction), reject
+│   ├── SellerDocumentService.php      upload/replace, missing-docs check,
+│   │                                  download
+│   └── SellerProfileService.php       get, update, bank-change detection
 │
 ├── Actions/
-│   ├── SubmitSellerApplicationAction.php
+│   ├── CreateSellerApplicationAction.php
+│   ├── UpdateSellerApplicationAction.php
 │   ├── UploadApplicationDocumentAction.php
-│   ├── ResubmitSellerApplicationAction.php
-│   ├── ApproveSellerApplicationAction.php
-│   ├── RejectSellerApplicationAction.php
-│   ├── ListPendingApplicationsAction.php   (admin)
-│   ├── GetApplicationDetailAction.php      (admin — shows docs)
-│   └── UpdateSellerProfileAction.php
+│   ├── SubmitSellerApplicationAction.php      (first submit AND resubmit)
+│   ├── GetMySellerApplicationAction.php
+│   ├── ListSellerApplicationsAction.php       (admin)
+│   ├── GetSellerApplicationDetailAction.php   (admin)
+│   ├── DownloadApplicationDocumentAction.php  (admin)
+│   ├── ApproveSellerApplicationAction.php     (admin — transaction, C3)
+│   ├── RejectSellerApplicationAction.php      (admin)
+│   ├── GetSellerProfileAction.php
+│   ├── UpdateSellerProfileAction.php      (moderates description, C16)
+│   ├── UploadSellerLogoAction.php         (moderates image, C16)
+│   └── DeleteSellerLogoAction.php
 │
 ├── Events/
+│   ├── SellerDocumentUploaded.php
 │   ├── SellerApplicationSubmitted.php
 │   ├── SellerApplicationResubmitted.php
 │   ├── SellerApplicationApproved.php
 │   ├── SellerApplicationRejected.php
-│   └── SellerProfileUpdated.php
+│   ├── SellerProfileUpdated.php
+│   └── SellerBankDetailsChanged.php
 │
-├── Listeners/
-│   ├── NotifyAdminsOfNewApplicationListener.php     (Submitted + Resubmitted)
-│   ├── UpgradeUserRoleOnApprovalListener.php         (Approved)
-│   ├── NotifyUserOfApprovalListener.php              (Approved)
-│   └── NotifyUserOfRejectionListener.php             (Rejected)
+├── Listeners/                     (side-effects only — no role logic, C3)
+│   ├── NotifyAdminsOfApplicationListener.php   (Submitted + Resubmitted)
+│   ├── NotifyUserOfApprovalListener.php        (Approved)
+│   ├── NotifyUserOfRejectionListener.php       (Rejected)
+│   └── NotifySellerOfBankChangeListener.php    (BankDetailsChanged)
 │
-├── Notifications/
-│   ├── SellerApplicationSubmittedNotification.php    -- to admins
-│   ├── SellerApplicationApprovedNotification.php     -- to user
-│   └── SellerApplicationRejectedNotification.php      -- to user, includes reason
-│
-└── Policies/
-    └── SellerApplicationPolicy.php   -- view/review only for admin roles
+└── Notifications/                 (mail + database, ShouldQueue — same as
+    │                               AccountLockedNotification)
+    ├── SellerApplicationSubmittedNotification.php   -- to admins
+    ├── SellerApplicationApprovedNotification.php    -- to the user
+    ├── SellerApplicationRejectedNotification.php    -- to the user + reason
+    └── SellerBankDetailsChangedNotification.php     -- to the seller
+
+app/Domain/Audit/Listeners/        (see section 6)
+├── AuditSellerDocumentUploadedListener.php
+├── AuditSellerApplicationSubmittedListener.php
+├── AuditSellerApplicationResubmittedListener.php
+├── AuditSellerApplicationApprovedListener.php
+├── AuditSellerApplicationRejectedListener.php
+├── AuditSellerProfileUpdatedListener.php
+└── AuditSellerBankDetailsChangedListener.php
 
 app/Http/Requests/Seller/
-├── SubmitSellerApplicationRequest.php
-├── UploadApplicationDocumentRequest.php   (file + document_type, mimes:pdf,jpg,png)
-├── ResubmitSellerApplicationRequest.php
-├── ReviewSellerApplicationRequest.php     (admin)
+├── CreateSellerApplicationRequest.php
+├── UpdateSellerApplicationRequest.php
+├── UploadApplicationDocumentRequest.php
+│     document_type: required, in SellerDocumentType
+│     file: required|file|mimes:pdf,jpg,jpeg,png|max:10240
+├── ReviewSellerApplicationRequest.php
+│     decision: required|in:approve,reject
+│     reason:   required_if:decision,reject|string|max:1000
 └── UpdateSellerProfileRequest.php
+      logo: nullable|image|mimes:jpg,jpeg,png,webp|max:2048
 
 app/Http/Controllers/Seller/
-├── SellerApplicationController.php    -- customer: submit, upload docs, resubmit, check status
-├── AdminSellerApplicationController.php -- admin: list, view detail, approve/reject
-└── SellerProfileController.php        -- approved seller: manage own business profile
+├── SellerApplicationController.php        -- customer
+├── AdminSellerApplicationController.php   -- admin
+└── SellerProfileController.php            -- approved seller
 
 app/Http/Resources/Seller/
 ├── SellerApplicationResource.php
-├── SellerApplicationCollection.php
-├── SellerApplicationDocumentResource.php
-└── SellerProfileResource.php
+├── SellerApplicationDocumentResource.php  -- type, original_name, size,
+│                                             updated_at. NEVER file_path.
+└── SellerProfileResource.php              -- bank shown as "****1234" only
 
 routes/seller/
-├── application.php   -- auth:sanctum + role:customer
-├── admin.php         -- auth:sanctum + role:super_admin|admin
-└── profile.php       -- auth:sanctum + role:seller
+├── application.php
+├── admin.php
+└── profile.php
+
+Existing files that get touched (wiring only):
+├── bootstrap/app.php                       10 exception render blocks (9 Seller
+│                                           + ModerationCheckFailed, C18)
+├── app/Providers/EventServiceProvider.php  events -> listeners
+├── app/Providers/AppServiceProvider.php    bind 2 repo interfaces +
+│                                           DocumentStorageInterface
+├── app/Domain/Audit/Enums/AuditAction.php  7 new cases (section 6)
+└── routes/api.php                          require the 3 route files
 
 
 --------------------------------------------------------------------------------
-4. OPEN QUESTIONS FOR NEXT STEP (before writing code)
+6. AUDIT TRAIL (D9)
 --------------------------------------------------------------------------------
-- Document storage: local disk (like avatars) for now, or something else?
-- Should "under_review" be a real distinct status (admin explicitly opens the
-  application = locks it from other admins reviewing simultaneously), or
-  skip it and go straight pending -> approved/rejected for simplicity now?
-- File size/type limits for documents (mirroring avatar's 5MB image-only,
-  but these are ID/legal docs — probably need PDF support too)?
+
+  Category: AuditCategory::SELLER_MANAGEMENT (already exists — no new case).
+
+  New AuditAction cases:
+    SELLER_DOCUMENT_UPLOADED        seller.document.uploaded          INFO
+    SELLER_APPLICATION_SUBMITTED    seller.application.submitted      INFO
+    SELLER_APPLICATION_RESUBMITTED  seller.application.resubmitted    INFO
+    SELLER_APPLICATION_APPROVED     seller.application.approved       NOTICE
+    SELLER_APPLICATION_REJECTED     seller.application.rejected       NOTICE
+    SELLER_PROFILE_UPDATED          seller.profile.updated            INFO
+    SELLER_BANK_DETAILS_CHANGED     seller.bank_details.changed       WARNING
+
+  Never written into audit rows: the bank account number (not even
+  encrypted) or document file paths. Bank changes log only
+  old/new last4 + bank_name.
+
+
+--------------------------------------------------------------------------------
+7. TESTS
+--------------------------------------------------------------------------------
+
+tests/Feature/Seller/SellerApplicationTest.php  (customer side)
+  - guest 401
+  - unverified email -> 403 (Q1)
+  - create -> draft; second create -> 409; taken store_name -> 422
+  - upload each type; re-upload replaces the row AND deletes the old file
+  - wrong mime / over 10 MB -> 422
+  - submit with missing docs -> 422 with the missing list
+  - submit with all 5 -> pending, admins notified (Notification::fake)
+  - upload or edit while pending -> 409
+  - resubmit after rejection -> pending, reason cleared, Resubmitted fired
+
+tests/Feature/Seller/AdminSellerApplicationTest.php
+  - non-admin 403; platform_admin allowed (proves D10)
+  - list shows pending only by default; drafts never listed
+  - detail shows the 5 documents without file paths
+  - document download streams the file
+  - approve -> approved + seller_profiles row + 'seller' role AND still
+    'customer' role + user notified
+  - reject without reason -> 422; with reason -> rejected + user notified
+  - reviewing an already-reviewed application -> 409
+
+tests/Feature/Seller/SellerProfileTest.php
+  - customer (not yet a seller) -> 403
+  - GET shows bank as "****1234", never the full number
+  - raw DB value of bank_account_number != the plain number (encrypted)
+  - locked fields (store_name etc.) can't be changed
+  - bank change -> WARNING audit row + email to the seller
+
+Files are faked with Storage::fake('local') / Storage::fake('public') and
+UploadedFile::fake(), same as UploadAvatarTest.
+
+
+--------------------------------------------------------------------------------
+8. BUILD ORDER — each phase ends with a checkpoint you run
+--------------------------------------------------------------------------------
+
+  Phase 1  Foundation
+           enums, 3 migrations, 3 models, 3 factories
+           CHECKPOINT: php artisan migrate
+
+  Phase 2  Customer application flow
+           exceptions (+ bootstrap/app.php mapping), DTOs, repositories,
+           document storage, services, actions, requests, controller,
+           resources, routes, submit/upload events + their audit listeners
+           CHECKPOINT: Postman + SellerApplicationTest
+
+  Phase 3  Admin review
+           list / detail / download / approve / reject, notifications,
+           approve/reject events + their audit listeners
+           CHECKPOINT: AdminSellerApplicationTest
+
+  Phase 4  Seller profile
+           profile get/update, bank-change detection, bank-change
+           notification + WARNING audit
+           CHECKPOINT: SellerProfileTest + full `php artisan test`
+
+
+--------------------------------------------------------------------------------
+9. ANSWERED QUESTIONS (decided 2026-09-23)
+--------------------------------------------------------------------------------
+
+  Q1. Who is allowed to apply?
+      DECIDED: any active customer with a VERIFIED email
+      (users.email_verified_at not null). A UserProfile is NOT required —
+      the application carries its own business fields.
+      Unverified -> EmailNotVerifiedForSellingException (403), checked in
+      CreateSellerApplicationAction and again on submit.
+  Q2. Bank detail change security:
+      DECIDED: WARNING audit row + email to the seller. No password
+      re-entry for now.
+  Q3. Who gets the "new application" email?
+      DECIDED: every user with the super_admin or platform_admin role
+      (same roles that can review — D10).
+
+
+--------------------------------------------------------------------------------
+10. PHASE 5 — AI DOCUMENT VERIFICATION  (DESIGNED, DEFERRED — decided 2026-09-24)
+--------------------------------------------------------------------------------
+
+  STATUS: BUILT (2026-09-24) — behind a switch that is OFF by default:
+            SELLER_AI_VERIFICATION_ENABLED=false   (config/services.php)
+          OFF -> NullDocumentVerifier: nothing is sent anywhere, every
+                 document is "skipped", risk = unknown, admin reviews by eye.
+          ON  -> GeminiDocumentVerifier. Turn ON only after Gemini billing
+                 (PAID tier) is enabled. Optional GEMINI_VERIFICATION_MODEL.
+  Also added: applicants must accept `accept_document_processing: true`
+  when starting an application (consent, stored as
+  document_processing_consent_at).
+  Tests: SellerDocumentVerificationTest, GeminiDocumentVerifierTest,
+  Unit/Seller/NameMatcherTest — all with fakes, no real AI calls.
+
+  WHY IT IS BLOCKED (hard requirement, not optional):
+    Gemini API terms for the FREE tier: "Do not submit sensitive,
+    confidential, or personal information to the Unpaid Services." Free-tier
+    prompts/files are used to improve Google products and human reviewers
+    may read them. CNIC scans and bank statements must therefore ONLY ever
+    go to the PAID tier (billing enabled), where Google states it does not
+    use prompts or files to improve its products.
+    Rough cost estimate at build time (verify pricing again before building):
+    ~1–2 US cents per full application (5 documents).
+
+  WHAT AI CAN / CANNOT DO (keep this honest in the UI and docs):
+    CAN   : tell a CNIC from a selfie / random / explicit image; detect
+            blurry, cropped or unreadable scans; read name, CNIC number,
+            expiry, bank account title + last 4 digits, business name / NTN;
+            point out *possible* signs of editing.
+    CANNOT: prove a CNIC was genuinely issued by NADRA. A good forgery can
+            pass. Real identity verification = NADRA Verisys API (paid,
+            needs business registration) — separate, later.
+    => AI assists; it NEVER approves. The admin's decision stays final.
+
+  DECISIONS ALREADY TAKEN
+    P5-1  Blocking power (answered: "hard errors block, the rest is flagged"):
+          BLOCK at upload  : explicit/irrelevant image, wrong document type
+                             (e.g. selfie as cnic_front), unreadable scan.
+                             File is never stored; customer gets a clear
+                             message ("This does not look like the FRONT of
+                             a CNIC", "Photo is blurry — retake it").
+          BLOCK at submit  : CNIC front/back numbers differ, CNIC expired.
+          FLAG for admin   : name mismatches (e.g. "Muhammad" vs "M."),
+                             possible tampering, bank title vs applicant/
+                             business name mismatch, old bank statement.
+    P5-2  Payout bank vs verified bank statement (answered: "allow + flag"):
+          When the seller sets/changes payout bank details (Phase 4), compare
+          last4 + account title with the values AI read from the APPROVED
+          application's bank_statement. Mismatch -> save anyway, but WARNING
+          audit + notify admins + mark the profile "bank_unverified" so the
+          future Payouts domain holds payouts until an admin re-verifies.
+
+  DESIGN (3 layers)
+    Layer 1 — upload time, synchronous, per document
+      DocumentVerifierInterface (swappable: GeminiDocumentVerifier now;
+      NADRA / a self-hosted model later — fits the Python/ML learning track)
+        verify(type, bytes, mime) -> verdict (ok | block) + reason
+                                     + extracted fields + tamper notes
+      PDFs and images both supported (Gemini accepts application/pdf inline).
+      Only non-sensitive extracts are stored: CNIC number is needed for the
+      front/back check; bank account -> last4 + title + bank name ONLY
+      (never the full number).
+      Provider down -> 503 (same as ModerationCheckFailedException, C18).
+    Layer 2 — submit time, NO extra AI call
+      Plain PHP compares the fields already extracted in Layer 1:
+      front/back CNIC numbers equal, expiry > today, fuzzy name match
+      (normalised: lowercase, strip "muhammad/m./syed", etc.), business name
+      on license/tax vs application, statement title vs applicant/business,
+      statement date within ~3 months. Deterministic = testable + reliable.
+    Layer 3 — admin
+      Application detail gains an ai_report: per-document verdict + extracted
+      fields, every cross-check as pass/warn/fail with a reason, overall
+      risk low/medium/high. Admin list can be filtered/sorted by risk.
+
+  EXPECTED NEW PIECES (estimate — confirm when building)
+    migrations : seller_application_documents + ai_status, ai_findings (json),
+                 ai_checked_at; seller_applications + ai_risk_level,
+                 ai_report (json), ai_checked_at; seller_profiles +
+                 bank_verification_status
+    code       : DocumentVerifierInterface, GeminiDocumentVerifier,
+                 SellerDocumentVerificationService (Layer 2),
+                 DocumentRejectedByAiException (422),
+                 DocumentVerificationUnavailableException (503)
+    audit      : SELLER_DOCUMENT_REJECTED_BY_AI, SELLER_BANK_UNVERIFIED
+    consent    : applicant accepts "documents are checked by an automated AI
+                 service" before first upload (discuss wording with a
+                 lawyer before launch)
+    tests      : all with a FakeDocumentVerifier — no real AI calls in CI
+
+  TO SWITCH IT ON: enable Gemini billing, re-check pricing + terms, set
+  SELLER_AI_VERIFICATION_ENABLED=true, `php artisan config:clear`, restart
+  `queue:work`, then test with real sample documents before launch.
+
+  SECURITY NOTES BAKED INTO THE BUILD
+    - Prompt injection: text inside a document is DATA. Decisions come from
+      strict booleans (anything but `false` for "explicit" = explicit;
+      anything but `true` for "right document" = wrong document), fields are
+      whitelisted + sanitised, and customer messages are OUR fixed text
+      (DocumentRejectionCategory), never model-written.
+    - The bank account is cut to its last 4 digits inside the verifier, even
+      if the model returns the full number.
+    - ai_findings (CNIC number, names, dates) is ENCRYPTED at rest
+      (encrypted:array) and hidden from toArray(); only admin routes show it.
+    - Provider errors log status only (never the body), users get a generic
+      503 (DocumentVerificationUnavailableException).
+    - FAIL messages (shown to the customer) never contain names/numbers;
+      WARN messages (admin only) may.
+    - Upload order: status check -> AI -> store. A locked application never
+      costs an AI call; a rejected file never touches disk.
+
+
+--------------------------------------------------------------------------------
+11. PHASE 6 — ADMIN CONTROL OF LIVE SELLERS + BANK MISMATCH EXIT
+    (BUILT 2026-09-24)
+--------------------------------------------------------------------------------
+
+  Postman: postman/Seller_Phase6_AdminControl.postman_collection.json
+  Tests  : tests/Feature/Seller/AdminSellerControlTest.php
+
+  WHY: two dead ends existed after Phase 5 —
+    (a) once approved, admins could not even LIST live sellers, let alone
+        stop a fraudulent one;
+    (b) a payout bank marked "mismatch" had no way out.
+
+  DECISIONS
+    P6-1  Suspension closes the STORE, not the account (answered):
+          - seller_profiles.status -> suspended (+ reason, who, when)
+          - the seller can still OPEN the seller panel and read their
+            profile (status + reason shown), but every change — profile,
+            logo, bank, bank statement — returns 403
+          - the customer account keeps working (shopping as before)
+          - closing the whole account = the existing User-domain suspend
+          - future Catalog/Orders: a suspended store's products are hidden
+            and payouts stop
+    P6-2  Leaving "mismatch" needs PROOF inside the system (answered):
+          - the seller uploads a bank statement for the NEW payout account
+            (private disk, same Layer 1 AI check as onboarding documents)
+          - AI ON + statement's last4 & title match the payout account
+            -> "matched" automatically
+          - otherwise (AI off, or AI read something different)
+            -> "pending_review" + every seller reviewer is emailed
+          - admin reviews: verify -> "admin_verified"; reject (reason
+            required) -> back to "mismatch" + seller emailed with reason
+          - ANY later bank change clears the proof and starts over
+          - payouts (future Payment domain) only to a bank that is
+            "matched" or "admin_verified" — SellerProfile::isPayoutBankVerified()
+
+  BANK STATUS AFTER PHASE 6
+      matched ─────────────────────────────── payouts allowed
+      admin_verified ──────────────────────── payouts allowed
+      unknown ─┐
+      mismatch ┴─ seller uploads statement ─┬─ AI match ──► matched
+                                            └─ else ─────► pending_review
+      pending_review ─ admin verify ─► admin_verified
+                     └ admin reject ─► mismatch (+ reason emailed)
+
+  ENDPOINTS
+    Admin (auth:sanctum, active, role:super_admin|platform_admin)
+      GET  /v1/admin/sellers?status=active|suspended&bank=<bank status>
+      GET  /v1/admin/sellers/{id}
+      POST /v1/admin/sellers/{id}/suspend          { reason }
+      POST /v1/admin/sellers/{id}/reactivate
+      GET  /v1/admin/sellers/{id}/bank/statement   (streams the proof)
+      POST /v1/admin/sellers/{id}/bank/review      { decision: verify|reject, reason? }
+    Seller (existing profile group)
+      POST /v1/seller/profile/bank/statement       (form-data: file)
+
+  GUARDS
+    - suspend a suspended store / reactivate an active one -> 409
+    - reviewing a bank that has nothing pending            -> 409
+    - an admin can't suspend, reactivate or verify the bank of their OWN
+      store                                                -> 403 (as C12)
+    - suspend/reactivate/bank review lock the row FOR UPDATE (as C13)
+    - a suspended store can't change anything              -> 403
+    - uploading proof when the bank is already matched /
+      admin_verified, or no bank is set yet                -> 409
+
+  AUDIT (category SELLER_MANAGEMENT)
+    SELLER_SUSPENDED (exists) WARNING, SELLER_REACTIVATED NOTICE,
+    SELLER_BANK_PROOF_UPLOADED INFO, SELLER_BANK_VERIFIED_BY_ADMIN NOTICE,
+    SELLER_BANK_PROOF_REJECTED NOTICE
+
+
+--------------------------------------------------------------------------------
+12. PHASE 7 — SELLER TEAM (owner / manager / staff)   (BUILT 2026-09-24)
+--------------------------------------------------------------------------------
+
+  Postman: postman/Seller_Phase7_Team.postman_collection.json
+  Tests  : tests/Feature/Seller/SellerTeamTest.php
+
+
+  WHY: a store is currently ONE user account. A growing store has to share
+  the owner's password — staff could then change bank details, see payouts
+  and delete things, and every audit row would say "the owner did it".
+
+  THE ROLES ALREADY EXIST (RolePermissionMap, unchanged):
+    seller          owner   — everything, incl. payments.payouts
+    seller_manager          — same MINUS payments.payouts (runs the shop,
+                              never touches the money)
+    seller_staff            — view/create/update products + media, VIEW
+                              orders and stock. No delete, no store
+                              settings, no payouts.
+
+  THE REAL PROBLEM: Spatie roles are GLOBAL. assignRole('seller_staff')
+  says "this person is staff" but never "staff OF WHICH STORE". Today the
+  question is answered by seller_profiles.user_id (UNIQUE = the OWNER), so
+  findForUser($staffId) returns null and every seller endpoint 404s for a
+  staff member. Hence a membership table — that is the actual work.
+
+  DECISIONS
+    P7-1  One person belongs to ONE store at a time (answered). Enforced in
+          code (an active/invited membership anywhere blocks a new invite);
+          the DB keeps unique(seller_profile_id, user_id) so re-inviting
+          someone to the SAME store reuses their row instead of failing.
+    P7-2  Only EXISTING accounts can be invited (answered). No email match
+          -> 422 telling the owner to have them sign up first. No
+          invitation tokens, expiry or signup-link machinery.
+    P7-3  Only the OWNER manages the team (answered) — invite, change role,
+          remove. A manager runs the shop but cannot bring in more people.
+
+  C21. The accept/decline endpoints CANNOT sit behind role:seller — an
+       invitee has no seller role yet, so that group would 403 them
+       forever. They live in their own group: auth:sanctum + active only.
+  C22. The owner gets a team row too, so "which store is this user in" has
+       exactly ONE code path. The migration backfills an owner row for
+       every existing seller_profile, and approval creates one from then on.
+  C23. The owner can never change their own role or remove themselves —
+       that would leave the store ownerless (403).
+  C24. A suspended store (P6-1) blocks team changes too, not just profile
+       edits.
+  C25. Permission and suspension are checked BEFORE moderation, not after.
+       Moderation is a billable network call; refusing a suspended store or
+       a staff member afterwards means paying to reject them. The guards
+       live in SellerProfileService::guardUpdate() and guardLogoChange(),
+       which the action calls first and the service method calls again, so
+       the service stays safe on its own. BOTH moderated seller writes are
+       covered: the profile text update AND the logo upload.
+  C26. phpunit.xml pins GEMINI_API_KEY and SELLER_AI_VERIFICATION_ENABLED so
+       the suite never inherits .env. A real key in .env made tests call
+       Google for real (billable, non-deterministic, HTTP 400 on fake
+       uploads). tests/TestCase.php also calls Http::preventStrayRequests(),
+       so any unfaked call now names its own URL instead of leaking out.
+
+  ENDPOINTS
+    Seller team (auth:sanctum, active, role:seller|seller_manager|seller_staff,
+                 panel:seller)
+      GET    /v1/seller/team                  list members (any member)
+      POST   /v1/seller/team                  invite { email, role }   owner
+      PATCH  /v1/seller/team/{member}         change role { role }     owner
+      DELETE /v1/seller/team/{member}         remove                   owner
+    Invitations (auth:sanctum, active ONLY — C21)
+      GET    /v1/seller/invitations           my pending invitations
+      POST   /v1/seller/invitations/{member}/accept
+      POST   /v1/seller/invitations/{member}/decline
+
+  WHO CAN DO WHAT (SellerTeamRole helpers, one place)
+      owner    manage team, bank details, store profile, logo
+      manager  store profile, logo            (no team, no bank)
+      staff    read only on the store profile (products come with Catalog)
+
+  GUARDS
+    invite yourself -> 422 | role=owner -> 422 (validation in:manager,staff)
+    email has no account -> 422 (P7-2)
+    already in a store -> 409 (P7-1)
+    owner touching their own membership -> 403 (C23)
+    manager/staff managing the team -> 403 (P7-3)
+    accepting someone else's invitation -> 404
+    accepting an already-accepted/revoked one -> 409
+    suspended store -> 403 (C24)
+
+  AUDIT (category SELLER_MANAGEMENT)
+    SELLER_TEAM_MEMBER_INVITED INFO, SELLER_TEAM_MEMBER_JOINED NOTICE,
+    SELLER_TEAM_ROLE_CHANGED NOTICE, SELLER_TEAM_MEMBER_REMOVED NOTICE
+    Every row records WHICH member acted — the whole point of the feature.
+
+
+--------------------------------------------------------------------------------
+13. PHASE 8 — CLOSING THE SELLER DOMAIN            (planned 2026-09-24)
+--------------------------------------------------------------------------------
+  Three gaps stand between "the flow works" and "we never have to come back
+  to this domain": documents that expire after approval, a seller with no way
+  out, and an unmetered paid AI call. Plus one leftover from P7.
+
+  ------------------------------------------------------------------
+  13a. DOCUMENT EXPIRY AND RE-KYC
+  ------------------------------------------------------------------
+  THE BLOCKER: what the AI read is stored `encrypted:array`
+  (seller_application_documents.ai_findings). Ciphertext cannot be queried,
+  so `where date_of_expiry < now()` is impossible. A scheduled job can never
+  find an expiring seller through that column. This is the price we already
+  chose to pay for encryption-at-rest, and it has to be paid here.
+
+  DECISIONS
+    P8-1  At APPROVAL, copy only the DATES out of the encrypted findings
+          into plain, indexed columns on seller_profiles:
+            cnic_expires_at     <- cnic_front.date_of_expiry
+            licence_expires_at  <- business_license.expiry_date
+          A date is not the secret; the CNIC NUMBER is, and that stays
+          encrypted. Query on the date, never on the identity.
+    P8-2  Expiry does NOT close the store (answered). 30 days out the seller
+          is warned; at expiry the store keeps selling but PAYOUT STOPS until
+          a fresh document is approved. Earning is allowed, withdrawing is
+          not — the money is safe either way, and a seller on holiday does
+          not lose their business over an email they missed.
+    P8-3  Payout readiness is TWO independent facts, so it gets TWO columns.
+          bank_verification_status answers "is this bank account proven to be
+          theirs"; the NEW kyc_status answers "is their identity still
+          valid". Overloading the first with the second would lose the bank
+          status on expiry and make re-KYC have to guess what to restore.
+            SellerKycStatus: valid | expiring_soon | expired
+            SellerProfile::isPayoutReady()
+                = bank_verification_status->isPayoutReady()
+               && kyc_status !== EXPIRED
+    P8-4  Re-uploaded documents go AI-first, then admin confirms (answered) —
+          the same two-layer shape as onboarding, because re-KYC is exactly
+          where someone would paste another person's document.
+
+  C27. A NULL expiry date is NOT an expiry. AI verification is off by
+       default, so most sellers have no date at all. The job must treat
+       NULL as "nothing known" and leave them VALID — otherwise the day AI
+       is switched on, every existing seller flips to EXPIRED at once.
+  C28. The renewal does NOT touch seller_application_documents. The
+       application is the frozen record of what the admin actually approved;
+       rewriting it would destroy the audit trail. Renewals live in their
+       own table and the approved date is copied onto seller_profiles.
+  C29. The daily job notifies on a STATE CHANGE, not on a condition. Without
+       kyc_notified_at it would email the same seller every morning for 30
+       days straight.
+
+  NEW TABLE  seller_document_renewals
+    seller_profile_id, document_type, file_path (private disk),
+    original_name, mime_type, size_bytes,
+    ai_status, ai_findings (encrypted), ai_checked_at, extracted_expiry_date,
+    status (pending|approved|rejected), reviewed_by, reviewed_at,
+    rejection_reason, timestamps
+    index(status), index(seller_profile_id)
+
+  NEW COLUMNS  seller_profiles
+    cnic_expires_at (date, null, index)
+    licence_expires_at (date, null, index)
+    kyc_status (string 20, index, default 'valid')
+    kyc_notified_at (timestamp, null)     -- C29
+
+  SCHEDULED  seller:check-document-expiry   daily
+    NULL dates skipped (C27). Within 30 days -> expiring_soon + one email.
+    Past  -> expired + one email + payouts stop. A fresh approval resets
+    both the date and the status, and clears kyc_notified_at.
+
+  ENDPOINTS
+    Seller   POST /v1/seller/documents          re-upload { document_type, file }
+             GET  /v1/seller/documents          my renewals + their status
+    Admin    GET  /v1/admin/seller-renewals     pending queue (oldest first)
+             GET  /v1/admin/seller-renewals/{id}/file    download
+             POST /v1/admin/seller-renewals/{id}/review  { decision, reason? }
+
+  ------------------------------------------------------------------
+  13b. SELLER CLOSES THEIR OWN STORE
+  ------------------------------------------------------------------
+  DECISIONS
+    P8-5  `closed` is a THIRD status, never reusing `suspended`. Suspended
+          means the platform punished them; closed means they walked away.
+          Conflating the two would make the audit trail lie about which
+          happened, and those two facts are not legally interchangeable.
+    P8-6  Reopening needs ADMIN approval (answered). The seller asks, the
+          admin checks the bank and documents are still good, then reopens.
+          No new application, no re-uploading everything — but also no
+          closing to duck a review and quietly reopening later.
+
+  C30. A SUSPENDED store cannot be closed by its seller. Otherwise closing
+       becomes the escape hatch from an investigation.
+  C31. The team rows are KEPT on closure, only the Spatie roles come off
+       (every member, owner included). Reopening restores the roles from
+       those rows — the team does not have to be rebuilt by hand.
+  C32. Nothing is ever deleted. Orders and audit history hang off this
+       record; the row outlives the business.
+  C33. `ensureNotSuspended` becomes `ensureStoreOpen` and refuses BOTH
+       suspended and closed. Every existing write guard picks this up for
+       free — miss one and a closed store is still editable.
+  C34. Closing asks the seller to type their store name back. A one-click
+       button that dissolves a business is a bug, not a feature.
+
+  NEW COLUMNS  seller_profiles
+    closed_at (timestamp, null), closure_reason (text, null),
+    reopen_requested_at (timestamp, null)
+
+  ENDPOINTS
+    Seller   POST /v1/seller/profile/close    { confirm_store_name, reason? }
+             POST /v1/seller/profile/reopen   ask the admin to reopen
+    Admin    POST /v1/admin/sellers/{seller}/reopen   approve the request
+
+  ------------------------------------------------------------------
+  13c. RATE LIMITING THE PAID AI CALLS
+  ------------------------------------------------------------------
+  C35. Every document upload is a BILLABLE AI call made BEFORE the file is
+       stored — so a REJECTED upload costs money too. Without a limit one
+       loop runs up our bill. `throttle` sits on the route, ahead of the
+       controller, so a throttled request never reaches the AI at all.
+       Per authenticated USER, not per IP: they are all logged in, and an
+       IP limit would punish everyone behind one office connection.
+       Limits: documents 20/hour, bank proof 5/hour, renewals 10/hour.
+
+  ------------------------------------------------------------------
+  13d. LEFTOVER FROM PHASE 7
+  ------------------------------------------------------------------
+  C36. P7-1 (one person, one store) was only enforced at INVITE time, so a
+       staff member could still start their own application and only hit the
+       wall at approval — after doing all the work and paying for the AI
+       checks. The check moves to application creation, where the answer is
+       already knowable.
+
+  TESTS TO ADD
+    expiry job: null dates untouched | 30-day warn once, not daily |
+      expiry stops payout but keeps the store open | approval resets it
+    renewals: ai rejects before storing | admin approves -> new date +
+      kyc valid | admin rejects -> reason + retry allowed
+    closure: suspended cannot close (C30) | wrong store name refused (C34) |
+      roles come off, team rows stay (C31) | closed store refuses writes
+      (C33) | admin reopen restores roles
+    throttle: 21st upload in an hour -> 429 and NO ai call
+    C36: a team member cannot start an application
+
+--------------------------------------------------------------------------------
+14. OUT OF SCOPE (later)
+--------------------------------------------------------------------------------
+  - Hash-chained, tamper-evident audit log (D4) — Audit domain task
+  - under_review status + review locking (D5)
+  - S3 document storage (swap LocalDocumentStorage via the interface)
+  - Admin suspending a seller (SellerProfileStatus::SUSPENDED exists,
+    AuditAction::SELLER_SUSPENDED already exists, no endpoint yet)
+  - Payouts (Payment domain — the one place that decrypts the bank number)
+  - Seller products (Catalog domain)

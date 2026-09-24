@@ -1,0 +1,984 @@
+{
+  "info": {
+    "_postman_id": "494a8849-2daa-43c7-b715-a2785b25c9c1",
+    "name": "Zimal Store — Seller Onboarding (Phase 2: Customer)",
+    "description": "Phase 2 manual test for the customer side of seller onboarding.\n\nRUN ORDER:\n0) Get a token (either A: password login + OTP, or B: Google login).\n1) Run folder '1. Happy path' top to bottom.\n2) Run folder '2. Error cases' — each request says what it should return.\n\nBefore you start: php artisan migrate, and keep `php artisan queue:work` running (admin emails + audit rows are queued).\nEvery request sends Accept: application/json — without it a 401 turns into a redirect/500.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://zimal-store.test"
+    },
+    {
+      "key": "customer_email",
+      "value": "customer@example.com"
+    },
+    {
+      "key": "customer_password",
+      "value": "Password@123"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Get token (customer)",
+      "item": [
+        {
+          "name": "A1. Customer login (sends OTP email)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/customer/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customer",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Sends a 6-digit OTP to the email. Set customer_email / customer_password in the collection variables first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customer_email}}\",\n  \"password\": \"{{customer_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A2. Verify OTP (saves token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/customer/auth/verify-otp",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customer",
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "Replace 123456 with the code from the email. The token is saved to {{token}} automatically.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{customer_email}}\",\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const token = json && json.data ? json.data.token : null;",
+                  "if (token) {",
+                  "    pm.collectionVariables.set('token', token);",
+                  "    console.log('Token saved to collection variable {{token}}');",
+                  "} else {",
+                  "    console.log('No token in response (OTP / 2FA step pending?)');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B. Google login (alternative, saves token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/customer/auth/login/google",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customer",
+                "auth",
+                "login",
+                "google"
+              ]
+            },
+            "description": "Get a fresh id_token from http://zimal-store.test/google-test.html (valid ~1 hour).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_token\": \"PASTE_ID_TOKEN_FROM_google-test.html\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const token = json && json.data ? json.data.token : null;",
+                  "if (token) {",
+                  "    pm.collectionVariables.set('token', token);",
+                  "    console.log('Token saved to collection variable {{token}}');",
+                  "} else {",
+                  "    console.log('No token in response (OTP / 2FA step pending?)');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Happy path (run in order)",
+      "item": [
+        {
+          "name": "1. Start business (creates DRAFT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "description": "business_type: sole_proprietor | partnership | company. Response: status=draft, missing_documents lists all 5. accept_document_processing must be true (Phase 5 consent).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"store_name\": \"Zimal Fabrics\",\n  \"business_name\": \"Zimal Fabrics Pvt Ltd\",\n  \"business_type\": \"company\",\n  \"accept_document_processing\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "pm.test('Status is draft', () => pm.expect(pm.response.json().data.status).to.eql('draft'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. View my application",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "description": "Shows status, can_edit, can_submit, documents and missing_documents."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Edit info (draft/rejected only)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "description": "PATCH — send only the fields you want to change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business_name\": \"Zimal Fabrics & Textiles Pvt Ltd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4a. Upload CNIC front",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "documents"
+              ]
+            },
+            "description": "form-data: document_type=cnic_front, file=<select a PDF/JPG/PNG up to 10 MB>. First upload of this type returns 201, re-uploading the same type returns 200 (replaced).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document_type",
+                  "value": "cnic_front",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a PDF / JPG / PNG, max 10 MB"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Uploaded (201 new / 200 replaced)', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test('file_path is never returned', () => pm.expect(pm.response.json().data).to.not.have.property('file_path'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4b. Upload CNIC back",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "documents"
+              ]
+            },
+            "description": "form-data: document_type=cnic_back, file=<select a PDF/JPG/PNG up to 10 MB>. First upload of this type returns 201, re-uploading the same type returns 200 (replaced).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document_type",
+                  "value": "cnic_back",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a PDF / JPG / PNG, max 10 MB"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Uploaded (201 new / 200 replaced)', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test('file_path is never returned', () => pm.expect(pm.response.json().data).to.not.have.property('file_path'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4c. Upload business license",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "documents"
+              ]
+            },
+            "description": "form-data: document_type=business_license, file=<select a PDF/JPG/PNG up to 10 MB>. First upload of this type returns 201, re-uploading the same type returns 200 (replaced).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document_type",
+                  "value": "business_license",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a PDF / JPG / PNG, max 10 MB"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Uploaded (201 new / 200 replaced)', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test('file_path is never returned', () => pm.expect(pm.response.json().data).to.not.have.property('file_path'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4d. Upload tax certificate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "documents"
+              ]
+            },
+            "description": "form-data: document_type=tax_certificate, file=<select a PDF/JPG/PNG up to 10 MB>. First upload of this type returns 201, re-uploading the same type returns 200 (replaced).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document_type",
+                  "value": "tax_certificate",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a PDF / JPG / PNG, max 10 MB"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Uploaded (201 new / 200 replaced)', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test('file_path is never returned', () => pm.expect(pm.response.json().data).to.not.have.property('file_path'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4e. Upload bank statement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "documents"
+              ]
+            },
+            "description": "form-data: document_type=bank_statement, file=<select a PDF/JPG/PNG up to 10 MB>. First upload of this type returns 201, re-uploading the same type returns 200 (replaced).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document_type",
+                  "value": "bank_statement",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a PDF / JPG / PNG, max 10 MB"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Uploaded (201 new / 200 replaced)', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "pm.test('file_path is never returned', () => pm.expect(pm.response.json().data).to.not.have.property('file_path'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. View again (missing_documents should be empty)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('No documents missing', () => pm.expect(pm.response.json().data.missing_documents).to.have.lengthOf(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Submit for review (draft -> pending)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "submit"
+              ]
+            },
+            "description": "Status becomes pending. Admins (super_admin / platform_admin) get an email; an audit row seller.application.submitted is written."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('Status is pending', () => pm.expect(pm.response.json().data.status).to.eql('pending'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Error cases (expected failures)",
+      "item": [
+        {
+          "name": "E1. Start a second application -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "description": "Run AFTER step 1. One application per user.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"store_name\": \"Another Store\",\n  \"business_name\": \"Another Pvt Ltd\",\n  \"business_type\": \"sole_proprietor\",\n  \"accept_document_processing\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2. Invalid business_type -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "description": "Validation error on business_type.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"store_name\": \"Test Store\",\n  \"business_name\": \"Test Pvt Ltd\",\n  \"business_type\": \"freelancer\",\n  \"accept_document_processing\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3. Edit while pending -> 409",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "description": "Run AFTER step 6 (submit). Pending applications are locked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business_name\": \"Trying to change after submit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4. Upload while pending -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/documents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "documents"
+              ]
+            },
+            "description": "Run AFTER step 6. Documents are locked while pending (C2). Select any valid file.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document_type",
+                  "value": "cnic_front",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a PDF / JPG / PNG, max 10 MB"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5. Submit again while pending -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application",
+                "submit"
+              ]
+            },
+            "description": "Run AFTER step 6."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6. No token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/application",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "application"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -60,4 +60,30 @@ enum AuditAction: string
     case MODERATION_FLAG_RESOLVED = 'moderation.flag.resolved';
     case PROFILE_CONTENT_BLOCKED = 'moderation.profile.content_blocked';
     case DATA_EXPORTED = 'user.data.exported';
+
+    // Seller onboarding (BLUEPRINT.txt section 6)
+    case SELLER_DOCUMENT_UPLOADED = 'seller.document.uploaded';
+    case SELLER_APPLICATION_SUBMITTED = 'seller.application.submitted';
+    case SELLER_APPLICATION_RESUBMITTED = 'seller.application.resubmitted';
+    case SELLER_APPLICATION_APPROVED = 'seller.application.approved';
+    case SELLER_APPLICATION_REJECTED = 'seller.application.rejected';
+    case SELLER_PROFILE_UPDATED = 'seller.profile.updated';
+    case SELLER_BANK_DETAILS_CHANGED = 'seller.bank_details.changed';
+
+    // Seller AI verification (BLUEPRINT.txt section 10)
+    case SELLER_DOCUMENT_REJECTED_BY_AI = 'seller.document.rejected_by_ai';
+    case SELLER_APPLICATION_BLOCKED_BY_AI = 'seller.application.blocked_by_ai';
+    case SELLER_BANK_UNVERIFIED = 'seller.bank.unverified';
+
+    // Phase 6 — admin control of live sellers + bank proof
+    case SELLER_REACTIVATED = 'seller.reactivated';
+    case SELLER_BANK_PROOF_UPLOADED = 'seller.bank.proof_uploaded';
+    case SELLER_BANK_VERIFIED_BY_ADMIN = 'seller.bank.verified_by_admin';
+    case SELLER_BANK_PROOF_REJECTED = 'seller.bank.proof_rejected';
+
+    // Phase 7 — seller team
+    case SELLER_TEAM_MEMBER_INVITED = 'seller.team.member_invited';
+    case SELLER_TEAM_MEMBER_JOINED = 'seller.team.member_joined';
+    case SELLER_TEAM_ROLE_CHANGED = 'seller.team.role_changed';
+    case SELLER_TEAM_MEMBER_REMOVED = 'seller.team.member_removed';
 }

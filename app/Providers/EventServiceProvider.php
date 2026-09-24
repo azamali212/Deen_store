@@ -25,6 +25,48 @@ use App\Domain\Audit\Listeners\AuditPreferencesUpdatedListener;
 use App\Domain\Audit\Listeners\AuditPhoneVerifiedListener;
 use App\Domain\Audit\Listeners\AuditProfileUpdatedListener;
 use App\Domain\Audit\Listeners\AuditUserDataExportedListener;
+use App\Domain\Audit\Listeners\AuditSellerApplicationResubmittedListener;
+use App\Domain\Audit\Listeners\AuditSellerApplicationSubmittedListener;
+use App\Domain\Audit\Listeners\AuditSellerDocumentUploadedListener;
+use App\Domain\Seller\Events\SellerApplicationResubmitted;
+use App\Domain\Seller\Events\SellerApplicationSubmitted;
+use App\Domain\Seller\Events\SellerDocumentUploaded;
+use App\Domain\Seller\Listeners\NotifyAdminsOfApplicationListener;
+use App\Domain\Seller\Listeners\NotifyUserOfApprovalListener;
+use App\Domain\Seller\Listeners\NotifyUserOfRejectionListener;
+use App\Domain\Seller\Listeners\NotifySellerOfBankChangeListener;
+use App\Domain\Seller\Listeners\NotifyAdminsOfBankMismatchListener;
+use App\Domain\Seller\Listeners\NotifySellerOfStoreStatusListener;
+use App\Domain\Seller\Listeners\NotifyAdminsOfBankProofListener;
+use App\Domain\Seller\Listeners\NotifySellerOfBankReviewListener;
+use App\Domain\Seller\Listeners\NotifyInvitedUserListener;
+use App\Domain\Seller\Listeners\NotifyOwnerOfTeamJoinListener;
+use App\Domain\Seller\Listeners\NotifyMemberOfAccessChangeListener;
+use App\Domain\Seller\Events\SellerTeamMemberInvited;
+use App\Domain\Seller\Events\SellerTeamMemberJoined;
+use App\Domain\Seller\Events\SellerTeamRoleChanged;
+use App\Domain\Seller\Events\SellerTeamMemberRemoved;
+use App\Domain\Audit\Listeners\AuditSellerTeamListener;
+use App\Domain\Seller\Events\SellerStoreSuspended;
+use App\Domain\Seller\Events\SellerStoreReactivated;
+use App\Domain\Seller\Events\SellerBankProofUploaded;
+use App\Domain\Seller\Events\SellerBankProofReviewed;
+use App\Domain\Audit\Listeners\AuditSellerStoreStatusListener;
+use App\Domain\Audit\Listeners\AuditSellerBankProofListener;
+use App\Domain\Seller\Events\SellerDocumentRejectedByAi;
+use App\Domain\Seller\Events\SellerApplicationBlockedByAi;
+use App\Domain\Seller\Events\SellerBankUnverified;
+use App\Domain\Audit\Listeners\AuditSellerDocumentRejectedByAiListener;
+use App\Domain\Audit\Listeners\AuditSellerApplicationBlockedByAiListener;
+use App\Domain\Audit\Listeners\AuditSellerBankUnverifiedListener;
+use App\Domain\Seller\Events\SellerProfileUpdated;
+use App\Domain\Seller\Events\SellerBankDetailsChanged;
+use App\Domain\Audit\Listeners\AuditSellerProfileUpdatedListener;
+use App\Domain\Audit\Listeners\AuditSellerBankDetailsChangedListener;
+use App\Domain\Seller\Events\SellerApplicationApproved;
+use App\Domain\Seller\Events\SellerApplicationRejected;
+use App\Domain\Audit\Listeners\AuditSellerApplicationApprovedListener;
+use App\Domain\Audit\Listeners\AuditSellerApplicationRejectedListener;
 use App\Domain\Audit\Listeners\AuditProfileFlaggedListener;
 use App\Domain\Audit\Listeners\AuditModerationFlagResolvedListener;
 use App\Domain\Audit\Listeners\AuditProfileContentBlockedListener;
@@ -230,6 +272,96 @@ final class EventServiceProvider extends ServiceProvider
 
         UserDataExported::class => [
             AuditUserDataExportedListener::class,
+        ],
+
+        // ---- Seller onboarding ----
+        SellerDocumentUploaded::class => [
+            AuditSellerDocumentUploadedListener::class,
+        ],
+
+        SellerApplicationSubmitted::class => [
+            NotifyAdminsOfApplicationListener::class,
+            AuditSellerApplicationSubmittedListener::class,
+        ],
+
+        SellerApplicationResubmitted::class => [
+            NotifyAdminsOfApplicationListener::class,
+            AuditSellerApplicationResubmittedListener::class,
+        ],
+
+        SellerApplicationApproved::class => [
+            NotifyUserOfApprovalListener::class,
+            AuditSellerApplicationApprovedListener::class,
+        ],
+
+        SellerApplicationRejected::class => [
+            NotifyUserOfRejectionListener::class,
+            AuditSellerApplicationRejectedListener::class,
+        ],
+
+        SellerProfileUpdated::class => [
+            AuditSellerProfileUpdatedListener::class,
+        ],
+
+        SellerBankDetailsChanged::class => [
+            NotifySellerOfBankChangeListener::class,
+            AuditSellerBankDetailsChangedListener::class,
+        ],
+
+        // ---- Seller AI verification (Phase 5) ----
+        SellerDocumentRejectedByAi::class => [
+            AuditSellerDocumentRejectedByAiListener::class,
+        ],
+
+        SellerApplicationBlockedByAi::class => [
+            AuditSellerApplicationBlockedByAiListener::class,
+        ],
+
+        SellerBankUnverified::class => [
+            NotifyAdminsOfBankMismatchListener::class,
+            AuditSellerBankUnverifiedListener::class,
+        ],
+
+        // ---- Phase 6: live-store control + bank proof ----
+        SellerStoreSuspended::class => [
+            NotifySellerOfStoreStatusListener::class,
+            AuditSellerStoreStatusListener::class,
+        ],
+
+        SellerStoreReactivated::class => [
+            NotifySellerOfStoreStatusListener::class,
+            AuditSellerStoreStatusListener::class,
+        ],
+
+        SellerBankProofUploaded::class => [
+            NotifyAdminsOfBankProofListener::class,
+            AuditSellerBankProofListener::class,
+        ],
+
+        SellerBankProofReviewed::class => [
+            NotifySellerOfBankReviewListener::class,
+            AuditSellerBankProofListener::class,
+        ],
+
+        // ---- Phase 7: seller team ----
+        SellerTeamMemberInvited::class => [
+            NotifyInvitedUserListener::class,
+            AuditSellerTeamListener::class,
+        ],
+
+        SellerTeamMemberJoined::class => [
+            NotifyOwnerOfTeamJoinListener::class,
+            AuditSellerTeamListener::class,
+        ],
+
+        SellerTeamRoleChanged::class => [
+            NotifyMemberOfAccessChangeListener::class,
+            AuditSellerTeamListener::class,
+        ],
+
+        SellerTeamMemberRemoved::class => [
+            NotifyMemberOfAccessChangeListener::class,
+            AuditSellerTeamListener::class,
         ],
 
         AvatarUploaded::class => [

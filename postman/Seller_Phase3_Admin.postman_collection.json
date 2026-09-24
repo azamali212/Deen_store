@@ -1,0 +1,996 @@
+{
+  "info": {
+    "_postman_id": "5df452fb-711d-465a-9a88-9a8a4150f3aa",
+    "name": "Zimal Store — Seller Onboarding (Phase 3: Admin Review)",
+    "description": "Phase 3 manual test — admin side.\n\nBEFORE: you need at least one PENDING application (run the Phase 2 collection with a CUSTOMER account up to '6. Submit'). The reviewing admin must be a DIFFERENT account than the applicant — an admin can't review their own application (403).\n\nRUN ORDER: 0 (admin token) -> 1 (list, sets application_id automatically) -> 2 (detail + downloads) -> 3 (review: run EITHER approve OR reject) -> 4 (error cases).\nKeep `php artisan queue:work` running to see the applicant's email + audit rows.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{admin_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "admin_email",
+      "value": "azamalifsd73@gmail.com"
+    },
+    {
+      "key": "admin_password",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "application_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Admin token",
+      "item": [
+        {
+          "name": "A1. Admin login (sends OTP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Set admin_email / admin_password in the collection Variables first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A2. Verify admin OTP (saves admin_token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/auth/verify-otp",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "Replace 123456 with the OTP from the email.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{admin_email}}\",\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const token = json && json.data ? json.data.token : null;",
+                  "if (token) { pm.collectionVariables.set('admin_token', token); console.log('admin_token saved'); }",
+                  "else { console.log('No token yet — if requires_two_factor is true, run A3 next.'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A3. Two-factor verify (ONLY if A2 said requires_two_factor)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/auth/two-factor/verify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "auth",
+                "two-factor",
+                "verify"
+              ]
+            },
+            "description": "Only needed if 2FA is enabled on the admin account. Code = 6 digits from the authenticator app.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{admin_email}}\",\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const token = json && json.data ? json.data.token : null;",
+                  "if (token) { pm.collectionVariables.set('admin_token', token); console.log('admin_token saved'); }",
+                  "else { console.log('No token yet — if requires_two_factor is true, run A3 next.'); }"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. List",
+      "item": [
+        {
+          "name": "1a. Pending applications (default) — saves application_id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications"
+              ]
+            },
+            "description": "Default filter is pending. Drafts are never listed. Saves the first id into {{application_id}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const first = pm.response.json().data[0];",
+                  "if (first) { pm.collectionVariables.set('application_id', first.id); console.log('application_id = ' + first.id); }",
+                  "else { console.log('No pending applications — submit one from the Phase 2 collection first.'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1b. All submitted (pending + approved + rejected)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications?status=all",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1c. Only approved",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications?status=approved",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "approved"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1d. Only rejected",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications?status=rejected",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "rejected"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Detail + documents",
+      "item": [
+        {
+          "name": "2a. Application detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}"
+              ]
+            },
+            "description": "Applicant, business info, 5 documents with download_url (never file_path)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('No file_path leaked', () => pm.response.json().data.documents.forEach(d => pm.expect(d).to.not.have.property('file_path')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2b. Download cnic_front",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/documents/cnic_front",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "documents",
+                "cnic_front"
+              ]
+            },
+            "description": "Use 'Send and Download' in Postman to save the file."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2c. Download cnic_back",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/documents/cnic_back",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "documents",
+                "cnic_back"
+              ]
+            },
+            "description": "Use 'Send and Download' in Postman to save the file."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2d. Download business_license",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/documents/business_license",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "documents",
+                "business_license"
+              ]
+            },
+            "description": "Use 'Send and Download' in Postman to save the file."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2e. Download tax_certificate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/documents/tax_certificate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "documents",
+                "tax_certificate"
+              ]
+            },
+            "description": "Use 'Send and Download' in Postman to save the file."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2f. Download bank_statement",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/documents/bank_statement",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "documents",
+                "bank_statement"
+              ]
+            },
+            "description": "Use 'Send and Download' in Postman to save the file."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Review (run ONE of these)",
+      "item": [
+        {
+          "name": "3a. APPROVE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "review"
+              ]
+            },
+            "description": "status=approved, seller_profiles row created, applicant gets 'seller' role (keeps 'customer'), approval email sent.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approve\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('Approved', () => pm.expect(pm.response.json().data.status).to.eql('approved'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3b. REJECT (with reason)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "review"
+              ]
+            },
+            "description": "status=rejected, reason saved + emailed. The customer can then fix and resubmit (Phase 2 collection: re-upload + 6. Submit).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"reject\",\n  \"reason\": \"CNIC back side is blurry, please upload a clear photo.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('Rejected', () => pm.expect(pm.response.json().data.status).to.eql('rejected'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Error cases (expected failures)",
+      "item": [
+        {
+          "name": "E1. Review again after 3a/3b -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "review"
+              ]
+            },
+            "description": "Already reviewed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approve\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2. Reject without reason -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "review"
+              ]
+            },
+            "description": "Run on a PENDING application to see the validation error.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"reject\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3. List drafts -> 422",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications?status=draft",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "draft"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4. Unknown application -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/999999",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "999999"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5. Unknown document type -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications/{{application_id}}/documents/passport",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications",
+                "{{application_id}}",
+                "documents",
+                "passport"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E6. No token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/seller-applications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "seller-applications"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

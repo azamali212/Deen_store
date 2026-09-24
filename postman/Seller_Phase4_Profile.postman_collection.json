@@ -1,0 +1,734 @@
+{
+  "info": {
+    "_postman_id": "f5a198bb-4956-4079-bc40-d761ecaa3f52",
+    "name": "Zimal Store — Seller Onboarding (Phase 4: Seller Profile)",
+    "description": "Phase 4 manual test — the APPROVED seller manages their business.\n\nBEFORE: the applicant's application must be APPROVED (Phase 3 collection, 3a).\nTOKEN: the applicant's CUSTOMER token from Phase 2 works here too — after approval the same account has the seller role, and the seller routes check the permission, not which login issued the token (blueprint C11, 'Switch to Seller Dashboard'). Paste it into {{token}}, or log in again with folder 0.\n\nKeep `php artisan queue:work` running to receive the bank-change email and see audit rows.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "seller_email",
+      "value": "azam.ayub62@yahoo.com"
+    },
+    {
+      "key": "seller_password",
+      "value": ""
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Token (skip if you still have the Phase 2 customer token)",
+      "item": [
+        {
+          "name": "A1. Login (sends OTP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/customer/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customer",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{seller_email}}\",\n  \"password\": \"{{seller_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A2. Verify OTP (saves token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/customer/auth/verify-otp",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customer",
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "description": "Replace 123456 with the emailed code. accessible_panels should now include 'seller'.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"{{seller_email}}\",\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "const token = json && json.data ? json.data.token : null;",
+                  "if (token) { pm.collectionVariables.set('token', token); console.log('token saved'); }",
+                  "pm.test('seller panel is accessible', () => pm.expect(pm.response.json().data.accessible_panels).to.include('seller'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Happy path (run in order)",
+      "item": [
+        {
+          "name": "1. View my business profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Created automatically on approval. Bank fields are empty until step 3."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('Full bank number never returned', () => {",
+                  "    const bank = pm.response.json().data.bank;",
+                  "    pm.expect(bank).to.not.have.property('account_number');",
+                  "    if (bank.account_number_masked) pm.expect(bank.account_number_masked).to.match(/^\\*{4}.{4}$/);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Update description + address",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "description goes through AI moderation (like the profile bio); address does not.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Hand-made lawn and cotton fabrics, shipped across Pakistan.\",\n  \"business_address\": \"Shop 12, Liberty Market, Lahore\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Add payout bank (first time -> email + NOTICE audit)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Stored ENCRYPTED; the response only shows ****1234. Seller gets 'Payout bank account added' email.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank_account_title\": \"Zimal Fabrics\",\n  \"bank_name\": \"Meezan Bank\",\n  \"bank_account_number\": \"01234567891234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('Full bank number never returned', () => {",
+                  "    const bank = pm.response.json().data.bank;",
+                  "    pm.expect(bank).to.not.have.property('account_number');",
+                  "    if (bank.account_number_masked) pm.expect(bank.account_number_masked).to.match(/^\\*{4}.{4}$/);",
+                  "});",
+                  "pm.test('Masked ****1234', () => pm.expect(pm.response.json().data.bank.account_number_masked).to.eql('****1234'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Change bank using an IBAN with spaces (-> WARNING audit + security email)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Spaces removed + upper-cased before saving. Audit row severity=warning with only last4 (3344 -> 6702 style).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank_account_title\": \"Zimal Fabrics\",\n  \"bank_name\": \"Standard Chartered\",\n  \"bank_account_number\": \"PK36 SCBL 0000 0011 2345 6702\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('Full bank number never returned', () => {",
+                  "    const bank = pm.response.json().data.bank;",
+                  "    pm.expect(bank).to.not.have.property('account_number');",
+                  "    if (bank.account_number_masked) pm.expect(bank.account_number_masked).to.match(/^\\*{4}.{4}$/);",
+                  "});",
+                  "pm.test('Masked ****6702', () => pm.expect(pm.response.json().data.bank.account_number_masked).to.eql('****6702'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Same bank again (NOT a change -> no email, no audit)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Same account written differently — normalised, so nothing changes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank_account_title\": \"Zimal Fabrics\",\n  \"bank_name\": \"Standard Chartered\",\n  \"bank_account_number\": \"pk36scbl0000001123456702\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. Upload store logo (form-data)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile/logo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile",
+                "logo"
+              ]
+            },
+            "description": "form-data: logo = select a JPG/PNG/WEBP up to 2 MB. Separate endpoint because PHP does not parse multipart bodies on PUT. The image goes through the same AI moderation as avatars.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "logo",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPG / PNG / WEBP, max 2 MB"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('logo_url returned', () => pm.expect(pm.response.json().data.logo_url).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Remove store logo",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile/logo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile",
+                "logo"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test('logo_url is null', () => pm.expect(pm.response.json().data.logo_url).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Error cases (expected failures)",
+      "item": [
+        {
+          "name": "E1. Change store name (locked) -> 422",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "store_name / business_name / business_type were verified by the admin — locked (C6).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"store_name\": \"Renamed Store\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E2. Invalid bank number -> 422",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank_account_title\": \"Zimal Fabrics\",\n  \"bank_name\": \"Meezan Bank\",\n  \"bank_account_number\": \"12AB34CD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E3. Bank number without title/bank name -> 422",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "The three bank fields must be sent together.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bank_account_number\": \"01234567891234\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E4. Offensive description -> 422 (blocked by AI)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "Real Gemini call — result depends on the text you write.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Write something abusive here to see the moderation block\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "E5. No token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller",
+                "profile"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Seller;
+
+use App\Domain\Seller\Actions\DeleteSellerLogoAction;
+use App\Domain\Seller\Actions\GetSellerProfileAction;
+use App\Domain\Seller\Actions\UpdateSellerProfileAction;
+use App\Domain\Seller\Actions\UploadBankProofAction;
+use App\Domain\Seller\Actions\UploadSellerLogoAction;
+use App\Domain\Seller\DTO\UpdateSellerProfileDTO;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Seller\UpdateSellerProfileRequest;
+use App\Http\Requests\Seller\UploadBankProofRequest;
+use App\Http\Requests\Seller\UploadSellerLogoRequest;
+use App\Http\Resources\Seller\SellerProfileResource;
+use Illuminate\Http\Request;
+
+/**
+ * Approved seller manages their OWN business — resolved from
+ * $request->user(), no {id} anywhere.
+ */
+final class SellerProfileController extends Controller
+{
+    // View my business profile (bank shown masked)
+    public function show(
+        Request $request,
+        GetSellerProfileAction $action,
+    ): SellerProfileResource {
+
+        return new SellerProfileResource(
+            $action->execute($request->user()->id),
+        );
+    }
+
+    // Update description / address / payout bank (JSON body)
+    public function update(
+        UpdateSellerProfileRequest $request,
+        UpdateSellerProfileAction $action,
+    ): SellerProfileResource {
+
+        return new SellerProfileResource(
+            $action->execute(
+                $request->user()->id,
+                UpdateSellerProfileDTO::fromArray($request->validated()),
+            ),
+        );
+    }
+
+    // Upload or replace the store logo (multipart — separate from PUT,
+    // because PHP does not parse multipart bodies on PUT requests)
+    public function uploadLogo(
+        UploadSellerLogoRequest $request,
+        UploadSellerLogoAction $action,
+    ): SellerProfileResource {
+
+        return new SellerProfileResource(
+            $action->execute(
+                $request->user()->id,
+                $request->file('logo'),
+            ),
+        );
+    }
+
+    // P6-2 — upload a bank statement proving the payout account is yours.
+    // If the AI can read a matching account it is verified instantly,
+    // otherwise it waits for an admin.
+    public function uploadBankProof(
+        UploadBankProofRequest $request,
+        UploadBankProofAction $action,
+    ): SellerProfileResource {
+
+        return new SellerProfileResource(
+            $action->execute(
+                $request->user()->id,
+                $request->file('file'),
+            ),
+        );
+    }
+
+    // Remove the store logo
+    public function deleteLogo(
+        Request $request,
+        DeleteSellerLogoAction $action,
+    ): SellerProfileResource {
+
+        return new SellerProfileResource(
+            $action->execute($request->user()->id),
+        );
+    }
+}

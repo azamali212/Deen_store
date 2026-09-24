@@ -136,4 +136,22 @@ class User extends Authenticatable
     {
         return $this->hasMany(UserSocialAccount::class);
     }
+
+    public function sellerApplication(): HasOne
+    {
+        return $this->hasOne(SellerApplication::class);
+    }
+
+    public function sellerProfile(): HasOne
+    {
+        return $this->hasOne(SellerProfile::class);
+    }
+
+    // The store this user works for (Phase 7) — for the OWNER this is the
+    // same store as sellerProfile(), for a manager/staff it is the only
+    // way to find it at all.
+    public function sellerTeamMembership(): HasOne
+    {
+        return $this->hasOne(SellerTeamMember::class);
+    }
 }

@@ -32,5 +32,14 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+
+        <!-- The test suite must NEVER depend on .env for AI settings.
+             A real GEMINI_API_KEY there made tests call Google for real:
+             slow, billable, and non-deterministic. The key is present but
+             fake so the key-missing branch is not taken and Http::fake()
+             intercepts; a test that wants the missing-key path sets
+             config(["services.gemini.api_key" => null]) itself. -->
+        <env name="GEMINI_API_KEY" value="phpunit-fake-key"/>
+        <env name="SELLER_AI_VERIFICATION_ENABLED" value="false"/>
     </php>
 </phpunit>
