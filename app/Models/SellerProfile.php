@@ -26,11 +26,13 @@ final class SellerProfile extends Model
         'store_name_requested_at',
         'business_name',
         'business_type',
+        'country',
         'logo_path',
         'description',
         'business_address',
         'bank_account_title',
         'bank_name',
+        'bank_branch_code',
         'bank_account_number',
         'bank_account_last4',
         'bank_verification_status',
@@ -40,7 +42,7 @@ final class SellerProfile extends Model
         'bank_verified_by',
         'bank_verified_at',
         'bank_rejection_reason',
-        'cnic_expires_at',
+        'identity_expires_at',
         'licence_expires_at',
         'kyc_status',
         'kyc_notified_at',
@@ -57,6 +59,7 @@ final class SellerProfile extends Model
     // instead of SellerProfileResource, the full number never leaves.
     protected $hidden = [
         'bank_account_number',
+        'bank_branch_code',
         // Private-disk path — never leaves the server.
         'bank_proof_path',
     ];
@@ -69,6 +72,8 @@ final class SellerProfile extends Model
             // Encrypted with APP_KEY on write, decrypted on read — the DB
             // column only ever holds ciphertext.
             'bank_account_number' => 'encrypted',
+            // C57 — protected alongside the number it belongs with.
+            'bank_branch_code' => 'encrypted',
             'bank_verification_status' => BankVerificationStatus::class,
             'bank_proof_uploaded_at' => 'immutable_datetime',
             'bank_verified_at' => 'immutable_datetime',
@@ -76,7 +81,7 @@ final class SellerProfile extends Model
             'closed_at' => 'immutable_datetime',
             'store_name_requested_at' => 'immutable_datetime',
             'reopen_requested_at' => 'immutable_datetime',
-            'cnic_expires_at' => 'immutable_date',
+            'identity_expires_at' => 'immutable_date',
             'licence_expires_at' => 'immutable_date',
             'kyc_status' => SellerKycStatus::class,
             'kyc_notified_at' => 'immutable_datetime',
@@ -146,7 +151,7 @@ final class SellerProfile extends Model
      */
     public function earliestKycExpiry(): ?CarbonInterface
     {
-        $dates = array_filter([$this->cnic_expires_at, $this->licence_expires_at]);
+        $dates = array_filter([$this->identity_expires_at, $this->licence_expires_at]);
 
         return $dates === [] ? null : min($dates);
     }
@@ -155,6 +160,24 @@ final class SellerProfile extends Model
     {
         return $this->bank_verification_status === BankVerificationStatus::PENDING_REVIEW
             && $this->bank_proof_path !== null;
+    }
+
+    /**
+     * A sort code is short, so masking all but the last two digits is the
+     * most that can be shown while still letting the seller recognise what
+     * they entered.
+     */
+    public function maskedBankBranchCode(): ?string
+    {
+        $code = $this->bank_branch_code;
+
+        if ($code === null || $code === '') {
+            return null;
+        }
+
+        return strlen($code) <= 2
+            ? str_repeat('*', strlen($code))
+            : str_repeat('*', strlen($code) - 2).substr($code, -2);
     }
 
     public function maskedBankAccount(): ?string

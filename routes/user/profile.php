@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Http\Controllers\User\AddressController;
 use App\Http\Controllers\User\AvatarController;
 use App\Http\Controllers\User\DataExportController;
+use App\Http\Controllers\User\MeController;
 use App\Http\Controllers\User\PhoneVerificationController;
 use App\Http\Controllers\User\PreferenceController;
+use App\Http\Controllers\User\PrivacyController;
 use App\Http\Controllers\User\ProfileController;
 use Illuminate\Support\Facades\Route;
 
@@ -19,6 +21,10 @@ Route::middleware([
 ])
     ->prefix('v1')
     ->group(function (): void {
+
+        // A1 — who am I and what may I do. Re-readable, so a client can
+        // refresh after a role change without logging out again.
+        Route::get('me', [MeController::class, 'show'])->name('me');
 
         Route::prefix('profile')
             ->name('profile.')
@@ -62,6 +68,18 @@ Route::middleware([
             ->name('privacy.')
             ->group(function (): void {
 
+                // Art. 15 — give me a copy of what you hold.
                 Route::get('data-export', [DataExportController::class, 'export'])->name('data-export');
+
+                // A5 / Art. 17 — erase it. A request with a grace period, not
+                // an immediate delete; see AccountErasureService.
+                Route::get('erasure', [PrivacyController::class, 'erasureStatus'])->name('erasure.status');
+                Route::post('erasure', [PrivacyController::class, 'requestErasure'])->name('erasure.request');
+                Route::delete('erasure', [PrivacyController::class, 'cancelErasure'])->name('erasure.cancel');
+
+                // A5 / Art. 7 — the consent ledger.
+                Route::get('consents', [PrivacyController::class, 'consents'])->name('consents.index');
+                Route::post('consents', [PrivacyController::class, 'grantConsent'])->name('consents.store');
+                Route::delete('consents/{type}', [PrivacyController::class, 'withdrawConsent'])->name('consents.withdraw');
             });
     });

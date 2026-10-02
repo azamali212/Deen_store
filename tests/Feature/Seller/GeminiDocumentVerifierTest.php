@@ -94,17 +94,23 @@ final class GeminiDocumentVerifierTest extends TestCase
         $this->assertSame(DocumentAiStatus::FLAGGED, $result->aiStatus());
     }
 
-    public function test_cnic_number_is_normalised_to_13_digits(): void
+    /**
+     * C52 — this used to assert the value was squeezed to exactly 13
+     * digits, which threw away every passport number. The verifier now
+     * only strips separators; a fixed national length is checked in
+     * Layer 2 against CountryDocumentMap.
+     */
+    public function test_an_identity_number_keeps_its_value_and_loses_its_separators(): void
     {
         $this->geminiAnswers([
             'document_matches_expected_type' => true,
             'is_explicit_or_offensive' => false,
             'is_readable' => true,
-            'fields' => ['cnic_number' => '35202-1234567-1'],
+            'fields' => ['identity_number' => '35202-1234567-1'],
             'tamper_signs' => [],
         ]);
 
-        $this->assertSame('3520212345671', $this->verify(SellerDocumentType::CNIC_BACK)->fields['cnic_number']);
+        $this->assertSame('3520212345671', $this->verify(SellerDocumentType::CNIC_BACK)->fields['identity_number']);
     }
 
     public function test_explicit_content_is_rejected_even_if_it_claims_to_be_the_right_document(): void

@@ -160,6 +160,15 @@ use App\Domain\User\Listeners\SendAccountActivatedNotificationListener;
 use App\Domain\User\Listeners\SendAccountSuspendedNotificationListener;
 use App\Domain\User\Listeners\SendProfileCompletedNotificationListener;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
+use App\Domain\Audit\Listeners\AuditAccountErasureListener;
+use App\Domain\Audit\Listeners\AuditConsentListener;
+use App\Domain\Seller\Listeners\RemoveErasedUserFromTeamsListener;
+use App\Domain\User\Events\AccountErasureCancelled;
+use App\Domain\User\Events\AccountErasureRequested;
+use App\Domain\User\Events\AccountErased;
+use App\Domain\User\Events\ConsentGranted;
+use App\Domain\User\Events\ConsentWithdrawn;
+use App\Domain\User\Listeners\NotifyUserOfErasureListener;
 
 final class EventServiceProvider extends ServiceProvider
 {
@@ -499,6 +508,35 @@ final class EventServiceProvider extends ServiceProvider
         DefaultAddressChanged::class => [
             LogAddressChangeListener::class,
             AuditAddressChangeListener::class,
+        ],
+
+        // ---- A5: erasure and consent (BLUEPRINT section 18) ----
+
+        AccountErasureRequested::class => [
+            NotifyUserOfErasureListener::class,
+            AuditAccountErasureListener::class,
+        ],
+
+        AccountErasureCancelled::class => [
+            NotifyUserOfErasureListener::class,
+            AuditAccountErasureListener::class,
+        ],
+
+        // No notification listener here on purpose — there is no address left
+        // to write to once this fires (C65). The Seller listener is the other
+        // half of the erasure seam: the User domain announces, each other
+        // domain decides what it means for itself.
+        AccountErased::class => [
+            RemoveErasedUserFromTeamsListener::class,
+            AuditAccountErasureListener::class,
+        ],
+
+        ConsentGranted::class => [
+            AuditConsentListener::class,
+        ],
+
+        ConsentWithdrawn::class => [
+            AuditConsentListener::class,
         ],
     ];
 

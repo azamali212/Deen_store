@@ -20,12 +20,14 @@ final class UpdateSellerProfileRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        if (is_string($this->input('bank_account_number'))) {
-            $this->merge([
-                'bank_account_number' => strtoupper(
-                    (string) preg_replace('/[\s-]+/', '', $this->input('bank_account_number')),
-                ),
-            ]);
+        foreach (['bank_account_number', 'bank_branch_code'] as $field) {
+            if (is_string($this->input($field))) {
+                $this->merge([
+                    $field => strtoupper(
+                        (string) preg_replace('/[\s-]+/', '', $this->input($field)),
+                    ),
+                ]);
+            }
         }
     }
 
@@ -47,13 +49,20 @@ final class UpdateSellerProfileRequest extends FormRequest
             // account (new number, old title) is never saved.
             'bank_account_title' => ['required_with:bank_account_number,bank_name', 'string', 'min:3', 'max:100'],
             'bank_name' => ['required_with:bank_account_number,bank_account_title', 'string', 'min:2', 'max:100'],
+            // C56 — SHAPE only. The old rule was one Pakistani regex, and
+            // a request cannot know the seller's country without a lookup
+            // of its own. BankAccountValidator checks the FORMAT in the
+            // domain, where the country is already in hand.
             'bank_account_number' => [
                 'required_with:bank_account_title,bank_name',
                 'string',
-                // Pakistani IBAN (PK + 2 digits + 4-letter bank code + 16
-                // digits) OR a plain 8–24 digit account number.
-                'regex:/^(PK\d{2}[A-Z]{4}\d{16}|\d{8,24})$/',
+                'min:6',
+                'max:34',
             ],
+
+            // P11-1 — a UK sort code or a US routing number. Countries
+            // that use an IBAN simply leave it out.
+            'bank_branch_code' => ['sometimes', 'nullable', 'string', 'max:20'],
         ];
     }
 
@@ -66,7 +75,8 @@ final class UpdateSellerProfileRequest extends FormRequest
             'store_name.prohibited' => 'The store name was verified during approval and cannot be changed.',
             'business_name.prohibited' => 'The business name was verified during approval and cannot be changed.',
             'business_type.prohibited' => 'The business type was verified during approval and cannot be changed.',
-            'bank_account_number.regex' => 'Enter a valid IBAN (PK...) or an 8–24 digit account number.',
+            'bank_account_number.min' => 'That account number is too short to be real.',
+            'bank_account_number.max' => 'That account number is longer than any IBAN.',
         ];
     }
 }

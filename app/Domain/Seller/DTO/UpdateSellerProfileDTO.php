@@ -22,6 +22,7 @@ final readonly class UpdateSellerProfileDTO
         public array $profileFields,
         public ?string $bankAccountTitle,
         public ?string $bankName,
+        public ?string $bankBranchCode,
         public ?string $bankAccountNumber,
     ) {}
 
@@ -41,6 +42,7 @@ final readonly class UpdateSellerProfileDTO
             profileFields: $profileFields,
             bankAccountTitle: self::nullableString($data, 'bank_account_title'),
             bankName: self::nullableString($data, 'bank_name'),
+            bankBranchCode: self::nullableString($data, 'bank_branch_code'),
             // Already normalised by the request (spaces/dashes removed,
             // upper-cased), so "PK36 SCBL ..." and "PK36SCBL..." are equal.
             bankAccountNumber: self::nullableString($data, 'bank_account_number'),

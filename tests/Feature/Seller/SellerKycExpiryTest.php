@@ -49,7 +49,7 @@ final class SellerKycExpiryTest extends TestCase
      */
     public function test_a_store_with_no_recorded_dates_is_never_touched(): void
     {
-        $store = $this->store(['cnic_expires_at' => null, 'licence_expires_at' => null]);
+        $store = $this->store(['identity_expires_at' => null, 'licence_expires_at' => null]);
 
         $this->runSweep();
 
@@ -61,7 +61,7 @@ final class SellerKycExpiryTest extends TestCase
 
     public function test_a_date_far_in_the_future_is_left_alone(): void
     {
-        $store = $this->store(['cnic_expires_at' => now()->addYears(3)->toDateString()]);
+        $store = $this->store(['identity_expires_at' => now()->addYears(3)->toDateString()]);
 
         $this->runSweep();
 
@@ -71,7 +71,7 @@ final class SellerKycExpiryTest extends TestCase
 
     public function test_a_document_expiring_within_thirty_days_warns_the_seller_once(): void
     {
-        $store = $this->store(['cnic_expires_at' => now()->addDays(10)->toDateString()]);
+        $store = $this->store(['identity_expires_at' => now()->addDays(10)->toDateString()]);
 
         $this->runSweep();
 
@@ -83,7 +83,7 @@ final class SellerKycExpiryTest extends TestCase
     /** C29 — the whole reason kyc_notified_at exists. */
     public function test_running_again_the_next_day_does_not_email_the_same_seller_twice(): void
     {
-        $store = $this->store(['cnic_expires_at' => now()->addDays(10)->toDateString()]);
+        $store = $this->store(['identity_expires_at' => now()->addDays(10)->toDateString()]);
 
         $this->runSweep();
         Notification::assertSentToTimes($store->user, SellerKycStatusNotification::class, 1);
@@ -99,7 +99,7 @@ final class SellerKycExpiryTest extends TestCase
     public function test_an_expired_document_stops_payouts_but_leaves_the_store_open(): void
     {
         $store = $this->store([
-            'cnic_expires_at' => now()->subDay()->toDateString(),
+            'identity_expires_at' => now()->subDay()->toDateString(),
             'bank_account_last4' => '1234',
             'bank_verification_status' => BankVerificationStatus::ADMIN_VERIFIED->value,
         ]);
@@ -126,7 +126,7 @@ final class SellerKycExpiryTest extends TestCase
     public function test_the_soonest_of_the_two_dates_decides(): void
     {
         $store = $this->store([
-            'cnic_expires_at' => now()->addYears(4)->toDateString(),
+            'identity_expires_at' => now()->addYears(4)->toDateString(),
             'licence_expires_at' => now()->subDays(2)->toDateString(),
         ]);
 
@@ -137,7 +137,7 @@ final class SellerKycExpiryTest extends TestCase
 
     public function test_a_store_moves_from_warned_to_expired_and_is_told_again(): void
     {
-        $store = $this->store(['cnic_expires_at' => now()->addDays(3)->toDateString()]);
+        $store = $this->store(['identity_expires_at' => now()->addDays(3)->toDateString()]);
 
         $this->runSweep();
         $this->assertSame(SellerKycStatus::EXPIRING_SOON, $store->refresh()->kycStatus());

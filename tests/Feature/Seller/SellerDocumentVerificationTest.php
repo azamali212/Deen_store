@@ -7,6 +7,7 @@ namespace Tests\Feature\Seller;
 use App\Domain\Seller\DTO\DocumentVerificationResultDTO;
 use App\Domain\Seller\Enums\DocumentRejectionCategory;
 use App\Domain\Seller\Enums\SellerDocumentType;
+use App\Domain\Seller\Services\SellerDocumentRequirements;
 use App\Domain\Seller\Exceptions\DocumentVerificationUnavailableException;
 use App\Domain\Seller\Notifications\SellerBankUnverifiedNotification;
 use App\Models\SellerApplication;
@@ -72,7 +73,16 @@ final class SellerDocumentVerificationTest extends TestCase
         array $fieldOverrides = [],
         array $concerns = [],
     ): void {
-        foreach (SellerDocumentType::cases() as $type) {
+        // NOT SellerDocumentType::cases(). A3 turned that enum into a
+        // catalogue of every identity document across every country, so
+        // "one of each case" stopped meaning "a complete application" —
+        // it now means a Pakistani applicant holding a British driving
+        // licence and a German national ID. Ask the country rules what
+        // this application actually needs.
+        $required = app(SellerDocumentRequirements::class)
+            ->requiredTypes($application->country, []);
+
+        foreach ($required as $type) {
             SellerApplicationDocument::factory()
                 ->ofType($type)
                 ->aiChecked(
@@ -159,7 +169,7 @@ final class SellerDocumentVerificationTest extends TestCase
 
         $document = SellerApplicationDocument::query()->firstOrFail();
         $this->assertSame('passed', $document->ai_status->value);
-        $this->assertSame('3520212345671', $document->aiFields()['cnic_number']);
+        $this->assertSame('3520212345671', $document->aiFields()['identity_number']);
 
         // Personal data read off the CNIC is ciphertext in the database.
         $raw = (string) DB::table('seller_application_documents')->value('ai_findings');
@@ -239,7 +249,7 @@ final class SellerDocumentVerificationTest extends TestCase
         $user = $this->customer();
         $application = $this->draftFor($user);
         $this->giveAiCheckedDocuments($application, $fake, [
-            'cnic_back' => ['cnic_number' => '4210199999991'],
+            'cnic_back' => ['identity_number' => '4210199999991'],
         ]);
         Sanctum::actingAs($user);
 
@@ -249,7 +259,7 @@ final class SellerDocumentVerificationTest extends TestCase
         $response->assertJsonCount(1, 'failed_checks');
         $response->assertJsonPath(
             'failed_checks.0',
-            'The CNIC numbers on the front and back sides do not match. Please upload both sides of the SAME CNIC.',
+            'The numbers on the front and back do not match. Please upload both sides of the SAME document.',
         );
         // The customer-facing message never contains the numbers themselves.
         $this->assertStringNotContainsString('4210199999991', $response->getContent());
@@ -270,7 +280,7 @@ final class SellerDocumentVerificationTest extends TestCase
 
         $this->postJson(self::CUSTOMER.'/submit')
             ->assertStatus(422)
-            ->assertJsonPath('failed_checks.0', 'Your CNIC has expired. Please upload a valid CNIC.');
+            ->assertJsonPath('failed_checks.0', 'Your identity document has expired. Please upload a valid one.');
     }
 
     public function test_a_clean_consistent_application_goes_to_the_admin_as_low_risk(): void
@@ -307,7 +317,7 @@ final class SellerDocumentVerificationTest extends TestCase
         $this->assertSame('pending', $fresh->status->value);
         $this->assertSame('medium', $fresh->ai_risk_level->value);
 
-        $nameCheck = collect($fresh->ai_report['checks'])->firstWhere('key', 'cnic_name_matches_account');
+        $nameCheck = collect($fresh->ai_report['checks'])->firstWhere('key', 'identity_name_matches_account');
         $this->assertSame('warn', $nameCheck['result']);
     }
 
@@ -330,7 +340,10 @@ final class SellerDocumentVerificationTest extends TestCase
     {
         $user = $this->customer();
         $application = $this->draftFor($user);
-        foreach (SellerDocumentType::cases() as $type) {
+        $required = app(SellerDocumentRequirements::class)
+            ->requiredTypes($application->country, []);
+
+        foreach ($required as $type) {
             SellerApplicationDocument::factory()->ofType($type)->aiSkipped()
                 ->create(['seller_application_id' => $application->id]);
         }
@@ -371,7 +384,7 @@ final class SellerDocumentVerificationTest extends TestCase
 
         $cnicFront = collect($adminView->json('data.documents'))->firstWhere('document_type', 'cnic_front');
         $this->assertSame('passed', $cnicFront['ai']['status']);
-        $this->assertSame('3520212345671', $cnicFront['ai']['extracted']['cnic_number']);
+        $this->assertSame('3520212345671', $cnicFront['ai']['extracted']['identity_number']);
     }
 
     public function test_the_admin_can_list_high_risk_applications_first(): void

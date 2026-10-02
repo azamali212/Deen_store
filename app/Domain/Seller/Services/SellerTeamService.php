@@ -41,6 +41,16 @@ final readonly class SellerTeamService
             ?? throw SellerProfileNotFoundException::forUser($userId);
     }
 
+    /**
+     * A1 — the same lookup as membershipFor(), but returns null instead of
+     * throwing. /v1/me asks "are you in a store?" of EVERY user, and for
+     * most of them the honest answer is simply no.
+     */
+    public function contextFor(int $userId): ?SellerTeamMember
+    {
+        return $this->team->activeForUser($userId);
+    }
+
     public function list(int $userId): Collection
     {
         return $this->team->listForStore($this->membershipFor($userId)->seller_profile_id);

@@ -38,6 +38,8 @@ final readonly class SellerProfileRepository implements SellerProfileRepositoryI
             'store_name' => $application->store_name,
             'business_name' => $application->business_name,
             'business_type' => $application->business_type->value,
+            // P10-1 — part of what the admin verified.
+            'country' => $application->country,
             'status' => SellerProfileStatus::ACTIVE->value,
             // C9 — always set in code. The expiry DATES are copied in
             // straight after, by SellerApplicationService::approve() (P8-1).

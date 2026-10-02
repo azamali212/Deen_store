@@ -38,15 +38,44 @@ final class GeminiDocumentVerifier implements DocumentVerifierInterface
      * Fields we ask for, per document type, and how each is sanitised.
      */
     private const FIELDS = [
+        // Every identity document reports the SAME field names, whatever
+        // country issued it, so Layer 2 can compare a passport and a CNIC
+        // with one piece of code (C53). `identity_number` replaces the old
+        // `cnic_number`; the 13-digit rule moved to CountryDocumentMap.
         'cnic_front' => [
             'full_name' => 'text',
             'father_name' => 'text',
-            'cnic_number' => 'cnic',
+            'identity_number' => 'id_number',
             'date_of_birth' => 'date',
             'date_of_expiry' => 'date',
         ],
         'cnic_back' => [
-            'cnic_number' => 'cnic',
+            'identity_number' => 'id_number',
+        ],
+        'passport' => [
+            'full_name' => 'text',
+            'identity_number' => 'id_number',
+            'date_of_birth' => 'date',
+            'date_of_expiry' => 'date',
+            'issuing_country' => 'text',
+        ],
+        'driving_licence_front' => [
+            'full_name' => 'text',
+            'identity_number' => 'id_number',
+            'date_of_birth' => 'date',
+            'date_of_expiry' => 'date',
+        ],
+        'driving_licence_back' => [
+            'identity_number' => 'id_number',
+        ],
+        'national_id_front' => [
+            'full_name' => 'text',
+            'identity_number' => 'id_number',
+            'date_of_birth' => 'date',
+            'date_of_expiry' => 'date',
+        ],
+        'national_id_back' => [
+            'identity_number' => 'id_number',
         ],
         'business_license' => [
             'business_name' => 'text',
@@ -68,8 +97,13 @@ final class GeminiDocumentVerifier implements DocumentVerifierInterface
     private const EXPECTED = [
         'cnic_front' => 'the FRONT side of a Pakistani CNIC/SNIC (national identity card issued by NADRA). It shows the holder\'s photo, name, father/husband name, a 13-digit identity number (format 12345-1234567-1) and dates of birth, issue and expiry.',
         'cnic_back' => 'the BACK side of a Pakistani CNIC/SNIC. It shows address(es), a barcode/QR code and usually the identity number.',
-        'business_license' => 'a business registration or trade licence (for example an SECP certificate of incorporation, a chamber of commerce certificate or a municipal trade licence).',
-        'tax_certificate' => 'a tax registration certificate (for example an FBR NTN certificate or a sales-tax registration certificate).',
+        'passport' => 'the PHOTO PAGE of a passport from any country. It shows the holder\'s photograph, full name, passport number, nationality, date of birth and date of expiry, usually above two lines of machine-readable text.',
+        'driving_licence_front' => 'the FRONT of a driving licence. It shows the holder\'s photograph, full name, date of birth, a licence number and an expiry date.',
+        'driving_licence_back' => 'the BACK of a driving licence. It usually shows vehicle categories, a barcode and the licence number.',
+        'national_id_front' => 'the FRONT of a national identity card issued by a government. It shows the holder\'s photograph, full name, an identity number and an expiry date.',
+        'national_id_back' => 'the BACK of a national identity card. It usually shows an address, a machine-readable zone or a barcode, and often the identity number.',
+        'business_license' => 'a business registration or trade licence (for example a certificate of incorporation, a companies-registry extract, a chamber of commerce certificate or a municipal trade licence).',
+        'tax_certificate' => 'a tax registration certificate issued by a tax authority (for example a VAT registration certificate, a tax identification number certificate or an NTN certificate).',
         'bank_statement' => 'a bank account statement or account maintenance certificate issued by a bank.',
     ];
 
@@ -131,7 +165,7 @@ final class GeminiDocumentVerifier implements DocumentVerifierInterface
 
         foreach (self::FIELDS[$type->value] as $field => $kind) {
             $fieldLines[] = sprintf('  "%s": %s', $field, match ($kind) {
-                'cnic' => 'the 13-digit identity number as digits only, or null',
+                'id_number' => 'the document\'s identity/serial number exactly as printed, or null',
                 'last4' => 'ONLY the LAST 4 digits of the account number or IBAN, or null. NEVER return the full number',
                 'date' => 'date as YYYY-MM-DD, or null',
                 default => 'as printed, in English/Latin script, or null',
@@ -206,7 +240,7 @@ final class GeminiDocumentVerifier implements DocumentVerifierInterface
             $value = is_scalar($value) ? trim((string) $value) : '';
 
             $clean[$field] = $value === '' ? null : match ($kind) {
-                'cnic' => $this->cnic($value),
+                'id_number' => $this->idNumber($value),
                 'last4' => $this->last4($value),
                 'date' => $this->date($value),
                 default => mb_substr($value, 0, self::MAX_FIELD_LENGTH),
@@ -216,11 +250,22 @@ final class GeminiDocumentVerifier implements DocumentVerifierInterface
         return $clean;
     }
 
-    private function cnic(string $value): ?string
+    /**
+     * C52 — this used to force EXACTLY 13 digits and return null for
+     * anything else. Right for a Pakistani CNIC, and it silently threw
+     * away every passport number in the world. Identity numbers differ by
+     * country in length and in whether they contain letters, so this only
+     * strips the separators and punctuation people print them with; a
+     * country that HAS a fixed format enforces it in CountryDocumentMap,
+     * where a national rule belongs.
+     */
+    private function idNumber(string $value): ?string
     {
-        $digits = (string) preg_replace('/\D/', '', $value);
+        $clean = strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $value));
 
-        return strlen($digits) === 13 ? $digits : null;
+        // Long enough to be a real number, short enough not to be a line
+        // of text the model misread.
+        return strlen($clean) >= 5 && strlen($clean) <= 30 ? $clean : null;
     }
 
     private function last4(string $value): ?string

@@ -10,6 +10,7 @@ use App\Domain\Seller\DTO\UploadApplicationDocumentDTO;
 use App\Domain\Seller\Enums\SellerDocumentType;
 use App\Domain\Seller\Events\SellerDocumentRejectedByAi;
 use App\Domain\Seller\Exceptions\DocumentRejectedByAiException;
+use App\Domain\Seller\Exceptions\DocumentTypeNotAcceptedException;
 use App\Domain\Seller\Exceptions\InvalidApplicationStatusTransitionException;
 use App\Domain\Seller\Exceptions\MissingRequiredDocumentsException;
 use App\Domain\Seller\Exceptions\SellerApplicationNotFoundException;
@@ -26,6 +27,7 @@ final readonly class SellerDocumentService
         private SellerApplicationRepositoryInterface $applications,
         private DocumentStorageInterface $storage,
         private DocumentVerifierInterface $verifier,
+        private SellerDocumentRequirements $requirements,
     ) {}
 
     public function upload(SellerApplication $application, UploadApplicationDocumentDTO $dto): SellerApplicationDocument
@@ -33,6 +35,14 @@ final readonly class SellerDocumentService
         // C2: no swapping a CNIC while pending or after approval.
         if (! $application->status->isEditable()) {
             throw InvalidApplicationStatusTransitionException::cannot('upload documents to', $application->status);
+        }
+
+        // A3 — a seller in Germany has no CNIC to give us, so asking for
+        // one is a mistake on our side, not a rejection on theirs.
+        $country = (string) ($application->country ?? 'PK');
+
+        if (! $this->requirements->allows($country, $dto->documentType)) {
+            throw DocumentTypeNotAcceptedException::forCountry($dto->documentType, $country);
         }
 
         // Layer 1 (BLUEPRINT section 10) — checked on the raw bytes BEFORE
@@ -97,10 +107,10 @@ final readonly class SellerDocumentService
      */
     public function missingTypes(SellerApplication $application): array
     {
-        return array_values(array_diff(
-            SellerDocumentType::required(),
+        return $this->requirements->missingTypes(
+            (string) ($application->country ?? 'PK'),
             $this->applications->uploadedDocumentTypes($application),
-        ));
+        );
     }
 
     public function ensureAllRequiredPresent(SellerApplication $application): void

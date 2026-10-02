@@ -52,7 +52,7 @@ final readonly class SellerKycService
 
     public function statusForProfile(SellerProfile $profile, ?CarbonInterface $today = null): SellerKycStatus
     {
-        return $this->statusFor($profile->cnic_expires_at, $profile->licence_expires_at, $today);
+        return $this->statusFor($profile->identity_expires_at, $profile->licence_expires_at, $today);
     }
 
     /**

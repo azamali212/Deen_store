@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Seller\Services;
 
+use App\Domain\Seller\Data\CountryDocumentMap;
 use App\Domain\Seller\DTO\VerificationReportDTO;
 use App\Domain\Seller\Enums\BankVerificationStatus;
 use App\Domain\Seller\Enums\DocumentAiStatus;
@@ -30,6 +31,7 @@ final readonly class SellerDocumentVerificationService
 
     public function __construct(
         private NameMatcher $names,
+        private SellerDocumentRequirements $requirements,
     ) {}
 
     public function crossCheck(SellerApplication $application): VerificationReportDTO
@@ -40,9 +42,16 @@ final readonly class SellerDocumentVerificationService
             fn (SellerApplicationDocument $document): string => $document->document_type->value,
         );
 
-        // Any document not read by the AI (switch off, or uploaded before
-        // Phase 5) -> no cross-checks, admin reviews manually.
-        foreach (SellerDocumentType::cases() as $type) {
+        $country = (string) ($application->country ?? 'PK');
+        $uploaded = $documents->keys()->all();
+
+        // C54 — over the types THIS application requires, never over the
+        // whole enum. With per-country rules most types are legitimately
+        // absent, and the old loop switched Layer 2 off for every seller
+        // outside Pakistan by finding a "missing" German CNIC.
+        $required = $this->requirements->requiredTypes($country, $uploaded);
+
+        foreach ($required as $type) {
             $document = $documents->get($type->value);
 
             if ($document === null || $document->ai_status === null || $document->ai_status === DocumentAiStatus::SKIPPED) {
@@ -50,13 +59,7 @@ final readonly class SellerDocumentVerificationService
             }
         }
 
-        $fields = fn (SellerDocumentType $type): array => $documents->get($type->value)->aiFields();
-
-        $front = $fields(SellerDocumentType::CNIC_FRONT);
-        $back = $fields(SellerDocumentType::CNIC_BACK);
-        $license = $fields(SellerDocumentType::BUSINESS_LICENSE);
-        $tax = $fields(SellerDocumentType::TAX_CERTIFICATE);
-        $bank = $fields(SellerDocumentType::BANK_STATEMENT);
+        $fields = fn (SellerDocumentType $type): array => $documents->get($type->value)?->aiFields() ?? [];
 
         $applicantName = (string) $application->user->name;
         $businessName = (string) $application->business_name;
@@ -64,41 +67,83 @@ final readonly class SellerDocumentVerificationService
 
         $checks = [];
 
-        // 1. CNIC front/back numbers — HARD (P5-1)
-        $frontNumber = $front['cnic_number'] ?? null;
-        $backNumber = $back['cnic_number'] ?? null;
+        // C53 — which identity document did they actually use? A passport
+        // has one side; a CNIC has two. The checks below follow whichever
+        // option they completed rather than assuming a CNIC.
+        $identity = $this->requirements->identityOptionUsed($country, $uploaded) ?? [];
+        $identityFront = null;
+        $identityBack = null;
 
-        $checks[] = match (true) {
-            $frontNumber === null => $this->check('cnic_numbers_match', VerificationCheckResult::WARN,
-                'The CNIC number on the front side could not be read — compare both sides manually.'),
-            $backNumber === null => $this->check('cnic_numbers_match', VerificationCheckResult::WARN,
-                'The CNIC number on the back side could not be read — compare both sides manually.'),
-            $frontNumber !== $backNumber => $this->check('cnic_numbers_match', VerificationCheckResult::FAIL,
-                'The CNIC numbers on the front and back sides do not match. Please upload both sides of the SAME CNIC.'),
-            default => $this->check('cnic_numbers_match', VerificationCheckResult::PASS,
-                'CNIC number is the same on both sides.'),
-        };
+        foreach ($identity as $type) {
+            if ($type->isIdentityFront()) {
+                $identityFront = $type;
+            } else {
+                $identityBack = $type;
+            }
+        }
 
-        // 2. CNIC expiry — HARD (P5-1)
+        if ($identityFront === null) {
+            return VerificationReportDTO::skipped();
+        }
+
+        $front = $fields($identityFront);
+        $license = $fields(SellerDocumentType::BUSINESS_LICENSE);
+        $tax = $fields(SellerDocumentType::TAX_CERTIFICATE);
+        $bank = $fields(SellerDocumentType::BANK_STATEMENT);
+
+        // 1. Both sides of the SAME document — HARD (P5-1), and only when
+        //    the document HAS two sides.
+        if ($identityBack !== null) {
+            $frontNumber = $front['identity_number'] ?? null;
+            $backNumber = $fields($identityBack)['identity_number'] ?? null;
+
+            $checks[] = match (true) {
+                $frontNumber === null => $this->check('identity_numbers_match', VerificationCheckResult::WARN,
+                    'The number on the front side could not be read — compare both sides manually.'),
+                $backNumber === null => $this->check('identity_numbers_match', VerificationCheckResult::WARN,
+                    'The number on the back side could not be read — compare both sides manually.'),
+                $frontNumber !== $backNumber => $this->check('identity_numbers_match', VerificationCheckResult::FAIL,
+                    'The numbers on the front and back do not match. Please upload both sides of the SAME document.'),
+                default => $this->check('identity_numbers_match', VerificationCheckResult::PASS,
+                    'The number is the same on both sides.'),
+            };
+        }
+
+        // 1b. C52 — a country with a FIXED identity-number length says so
+        //     in CountryDocumentMap. Nowhere else knows or cares.
+        $expectedDigits = CountryDocumentMap::identityNumberDigits($country);
+        $number = $front['identity_number'] ?? null;
+
+        if ($expectedDigits !== null && $number !== null) {
+            $digits = (string) preg_replace('/\D/', '', $number);
+
+            $checks[] = strlen($digits) === $expectedDigits
+                ? $this->check('identity_number_format', VerificationCheckResult::PASS,
+                    'The identity number has the expected length.')
+                : $this->check('identity_number_format', VerificationCheckResult::WARN,
+                    sprintf('The identity number read from the document is %d digits, expected %d.', strlen($digits), $expectedDigits));
+        }
+
+        // 2. Identity document expiry — HARD (P5-1)
         $expiry = $front['date_of_expiry'] ?? null;
 
         $checks[] = match (true) {
-            $expiry === null => $this->check('cnic_not_expired', VerificationCheckResult::WARN,
-                'CNIC expiry date could not be read — check it manually.'),
-            $expiry < $today => $this->check('cnic_not_expired', VerificationCheckResult::FAIL,
-                'Your CNIC has expired. Please upload a valid CNIC.'),
-            default => $this->check('cnic_not_expired', VerificationCheckResult::PASS,
-                'CNIC is valid until '.$expiry.'.'),
+            $expiry === null => $this->check('identity_not_expired', VerificationCheckResult::WARN,
+                'The expiry date could not be read — check it manually.'),
+            $expiry < $today => $this->check('identity_not_expired', VerificationCheckResult::FAIL,
+                'Your identity document has expired. Please upload a valid one.'),
+            default => $this->check('identity_not_expired', VerificationCheckResult::PASS,
+                'Identity document is valid until '.$expiry.'.'),
         };
 
-        // 3. CNIC name vs account holder — flag only
-        $cnicName = $front['full_name'] ?? null;
+        // 3. Name on the identity document vs the account — flag only
+        $identityName = $front['full_name'] ?? null;
 
-        $checks[] = $this->names->matches($cnicName, $applicantName)
-            ? $this->check('cnic_name_matches_account', VerificationCheckResult::PASS,
-                'Name on CNIC matches the account name.')
-            : $this->check('cnic_name_matches_account', VerificationCheckResult::WARN,
-                sprintf('Name on CNIC ("%s") does not clearly match the account name ("%s").', $cnicName ?? 'unreadable', $applicantName));
+        $checks[] = $this->names->matches($identityName, $applicantName)
+            ? $this->check('identity_name_matches_account', VerificationCheckResult::PASS,
+                'Name on the identity document matches the account name.')
+            : $this->check('identity_name_matches_account', VerificationCheckResult::WARN,
+                sprintf('Name on the identity document ("%s") does not clearly match the account name ("%s").', $identityName ?? 'unreadable', $applicantName));
 
         // 4. Business licence name + expiry — flag only
         $licenseName = $license['business_name'] ?? null;
@@ -150,8 +195,8 @@ final readonly class SellerDocumentVerificationService
 
         // 8. Possible tampering, per document — flag only (never auto-block:
         //    AI tamper detection is a hint, not proof)
-        foreach (SellerDocumentType::cases() as $type) {
-            foreach ($documents->get($type->value)->aiConcerns() as $index => $concern) {
+        foreach ($required as $type) {
+            foreach ($documents->get($type->value)?->aiConcerns() ?? [] as $index => $concern) {
                 $checks[] = $this->check("tamper_{$type->value}_{$index}", VerificationCheckResult::WARN,
                     'Possible editing on '.$type->label().': '.$concern);
             }

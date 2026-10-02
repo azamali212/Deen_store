@@ -80,7 +80,7 @@ final class SellerDocumentRenewalTest extends TestCase
     {
         $fake = $this->fakeDocumentVerifier();
         $reviewer = $this->admin();
-        $store = $this->store(['cnic_expires_at' => now()->addDays(5)->toDateString()]);
+        $store = $this->store(['identity_expires_at' => now()->addDays(5)->toDateString()]);
         Sanctum::actingAs($store->user);
 
         $response = $this->upload();
@@ -112,7 +112,7 @@ final class SellerDocumentRenewalTest extends TestCase
         $raw = (string) \Illuminate\Support\Facades\DB::table('seller_document_renewals')
             ->where('id', $renewal->id)->value('ai_findings');
         $this->assertStringNotContainsString('3520212345671', $raw);
-        $this->assertSame('3520212345671', $renewal->aiFields()['cnic_number']);
+        $this->assertSame('3520212345671', $renewal->aiFields()['identity_number']);
     }
 
     public function test_a_rejected_document_is_never_stored(): void
@@ -204,7 +204,7 @@ final class SellerDocumentRenewalTest extends TestCase
     {
         $this->fakeDocumentVerifier();
         $store = $this->store([
-            'cnic_expires_at' => now()->subDay()->toDateString(),
+            'identity_expires_at' => now()->subDay()->toDateString(),
             'kyc_status' => SellerKycStatus::EXPIRED->value,
         ]);
         Sanctum::actingAs($store->user);
@@ -216,7 +216,7 @@ final class SellerDocumentRenewalTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('data.0.store.payouts_on_hold', true);
-        $response->assertJsonPath('data.0.ai_fields.cnic_number', '3520212345671');
+        $response->assertJsonPath('data.0.ai_fields.identity_number', '3520212345671');
         $response->assertJsonMissingPath('data.0.file_path');
     }
 
@@ -224,7 +224,7 @@ final class SellerDocumentRenewalTest extends TestCase
     {
         $this->fakeDocumentVerifier();
         $store = $this->store([
-            'cnic_expires_at' => now()->subDay()->toDateString(),
+            'identity_expires_at' => now()->subDay()->toDateString(),
             'kyc_status' => SellerKycStatus::EXPIRED->value,
             'bank_account_last4' => '1234',
             'bank_verification_status' => \App\Domain\Seller\Enums\BankVerificationStatus::ADMIN_VERIFIED->value,
@@ -241,7 +241,7 @@ final class SellerDocumentRenewalTest extends TestCase
 
         $store->refresh();
         // The AI's date (5 years out) replaced yesterday's.
-        $this->assertTrue($store->cnic_expires_at->isFuture());
+        $this->assertTrue($store->identity_expires_at->isFuture());
         $this->assertSame(SellerKycStatus::VALID, $store->kycStatus());
         $this->assertTrue($store->isPayoutReady());
         // C29 — the next expiry cycle must be able to warn again.

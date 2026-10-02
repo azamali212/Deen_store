@@ -15,6 +15,7 @@ final readonly class CreateSellerApplicationDTO
         public string $storeName,
         public string $businessName,
         public BusinessType $businessType,
+        public string $country,
         public bool $acceptedDocumentProcessing = false,
     ) {}
 
@@ -24,6 +25,8 @@ final readonly class CreateSellerApplicationDTO
             storeName: self::requiredString($data, 'store_name'),
             businessName: self::requiredString($data, 'business_name'),
             businessType: BusinessType::from(self::requiredString($data, 'business_type')),
+            // P10-1 — decides which documents are asked for.
+            country: strtoupper(self::requiredString($data, 'country')),
             acceptedDocumentProcessing: self::boolean($data, 'accept_document_processing', false),
         );
     }

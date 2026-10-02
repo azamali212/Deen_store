@@ -38,6 +38,9 @@ class User extends Authenticatable
         'two_factor_secret',
         'two_factor_confirmed_at',
         'two_factor_last_verified_at',
+        // A5 — erasure is a request with a waiting period, not a flag.
+        'erasure_requested_at',
+        'erased_at',
     ];
 
     protected $hidden = [
@@ -67,6 +70,8 @@ class User extends Authenticatable
             'two_factor_last_verified_at' => 'datetime',
             'phone_verified_at' => 'datetime',
             'deleted_at' => 'datetime',
+            'erasure_requested_at' => 'datetime',
+            'erased_at' => 'datetime',
         ];
     }
 
@@ -135,6 +140,30 @@ class User extends Authenticatable
     public function socialAccounts(): HasMany
     {
         return $this->hasMany(UserSocialAccount::class);
+    }
+
+    /**
+     * A5 — the consent ledger. Append-only; see UserConsent and ConsentService.
+     */
+    public function consents(): HasMany
+    {
+        return $this->hasMany(UserConsent::class);
+    }
+
+    /**
+     * True once the anonymisation has actually run. Note this is NOT the same
+     * as soft-deleted: a user can soft-delete their account and still be
+     * fully identifiable in the database until erasure runs.
+     */
+    public function isErased(): bool
+    {
+        return $this->erased_at !== null;
+    }
+
+    public function hasPendingErasure(): bool
+    {
+        return $this->erasure_requested_at !== null
+            && $this->erased_at === null;
     }
 
     public function sellerApplication(): HasOne

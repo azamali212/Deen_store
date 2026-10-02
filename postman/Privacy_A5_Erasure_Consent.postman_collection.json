@@ -1,0 +1,2301 @@
+{
+ "info": {
+  "_postman_id": "d47c3a7c-deb4-4ed6-9b43-96cf0e52d88a",
+  "name": "Zimal Store — Privacy (A5: Erasure & Consent)",
+  "description": "A5 — GDPR erasure and the consent ledger. BLUEPRINT section 18 (P12, C59-C67).\n\nBEFORE YOU START\n1) php artisan migrate\n2) keep `php artisan queue:work` running (the emails and audit rows are queued)\n3) fill customer_email / customer_password in Variables\n4) for folder 5 only: seller_email / seller_password for a user who OWNS an\n   open store, plus store_name set to that store's EXACT name\n5) run folder 0 first\n\nTHE PROBLEM THIS SOLVES\nGDPR Art. 17 says a person can demand their data be deleted. AML rules say\nidentity records must be kept for years. Tax law says invoices must be kept\nfor years. All three are law at once, and any design that honours only one of\nthem is wrong.\n\nArt. 17(3)(b) is the hinge: the right to erasure does not apply where\nprocessing is required to comply with a legal obligation. So erasure is not\n\"delete the rows\". It is: remove everything that identifies a PERSON, keep\neverything the law obliges us to keep, and make sure what is kept can no\nlonger be tied back to them.\n\nWHAT IS HERE\nFolder 0  tokens\nFolder 1  the three calls a privacy screen makes to draw itself\nFolder 2  consent as an append-only ledger, not a settings screen (P12-5)\nFolder 3  what happens when the policy wording changes (P12-6)\nFolder 4  requesting erasure, and cancelling during the grace period\nFolder 5  C60 - why a store owner has to close the store first\nFolder 6  the nightly sweep, with the SQL to see exactly what survived\nFolder 7  every expected failure, and why each status code is that code\n\nFolders 3a, 6a and 6c send nothing - they are instructions to read, because\nthose parts need a .env change or an artisan command. They hit /up so sending\nthem is harmless.\n\nWARNING\nFolder 6 ERASES AN ACCOUNT, irreversibly, and that is the point of it. Use a\nthrowaway user. Put PRIVACY_ERASURE_GRACE_DAYS back when you are done - 0 days\nin production turns a hijacked session from a recoverable incident into a\npermanent loss.\n\nNOT LEGAL ADVICE\nThe retention windows, the 14-day grace period and the consent categories here\nare reasonable engineering defaults, not a compliance sign-off. Nothing in this\ncollection has been reviewed by a lawyer, and the project runs in the UK,\nEurope and Pakistan, each with its own rules. Confirm the numbers before\nlaunch.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "variable": [
+  {
+   "key": "base_url",
+   "value": "http://127.0.0.1:8000"
+  },
+  {
+   "key": "customer_email",
+   "value": "",
+   "description": "A throwaway user. Folder 6 erases them."
+  },
+  {
+   "key": "customer_password",
+   "value": ""
+  },
+  {
+   "key": "customer_token",
+   "value": ""
+  },
+  {
+   "key": "seller_email",
+   "value": "",
+   "description": "Folder 5 only — must OWN an open store."
+  },
+  {
+   "key": "seller_password",
+   "value": ""
+  },
+  {
+   "key": "seller_token",
+   "value": ""
+  },
+  {
+   "key": "store_name",
+   "value": "",
+   "description": "Folder 5 only — the EXACT store name, for 5d."
+  },
+  {
+   "key": "grace_days",
+   "value": "",
+   "description": "Filled by 1a."
+  },
+  {
+   "key": "confirmation_phrase",
+   "value": "",
+   "description": "Filled by 1a. Should be DELETE MY ACCOUNT."
+  },
+  {
+   "key": "scheduled_for",
+   "value": "",
+   "description": "Filled by 4a."
+  },
+  {
+   "key": "marketing_version",
+   "value": "",
+   "description": "Filled by 2a."
+  },
+  {
+   "key": "policy_version_before",
+   "value": "",
+   "description": "Filled by 2g, compared in 3c."
+  }
+ ],
+ "item": [
+  {
+   "name": "0. Tokens",
+   "item": [
+    {
+     "name": "A1. Customer login (sends OTP email)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/customer/auth/login",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "customer",
+        "auth",
+        "login"
+       ]
+      },
+      "description": "Fill customer_email / customer_password in the collection Variables first.\n\nThis is the PLAIN user — no store. Everything in folders 1-4 and most of 7 runs as this person.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{customer_email}}\",\n  \"password\": \"{{customer_password}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "A2. Verify OTP (saves customer_token)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/customer/auth/verify-otp",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "customer",
+        "auth",
+        "verify-otp"
+       ]
+      },
+      "description": "Replace 123456 with the code from the email. The token is saved to {{customer_token}}.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"identifier\": \"{{customer_email}}\",\n  \"code\": \"123456\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const json = pm.response.json();",
+         "const token = json && json.data ? json.data.token : null;",
+         "if (token) {",
+         "    pm.collectionVariables.set('customer_token', token);",
+         "    console.log('customer_token saved');",
+         "} else {",
+         "    console.log('No token in response (OTP / 2FA step pending?)');",
+         "}"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "B1. Seller login (sends OTP email)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/seller/auth/login",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "seller",
+        "auth",
+        "login"
+       ]
+      },
+      "description": "ONLY needed for folder 5 (C60 — the store owner). seller_email must OWN an open store.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{seller_email}}\",\n  \"password\": \"{{seller_password}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "B2. Verify OTP (saves seller_token)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/seller/auth/verify-otp",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "seller",
+        "auth",
+        "verify-otp"
+       ]
+      },
+      "description": "Saves {{seller_token}}.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"identifier\": \"{{seller_email}}\",\n  \"code\": \"123456\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const json = pm.response.json();",
+         "const token = json && json.data ? json.data.token : null;",
+         "if (token) { pm.collectionVariables.set('seller_token', token); console.log('seller_token saved'); }"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "1. What the privacy screen reads (safe, read-only)",
+   "item": [
+    {
+     "name": "1a. Erasure status — saves scheduled_for and grace_days",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "Everything a privacy screen needs to draw itself in one call:\n\n  pending              is a deletion already queued?\n  scheduled_for        the date the sweep would run\n  grace_days           config privacy.erasure_grace_days\n  blocked_by           [] when erasure is possible NOW; otherwise a\n                       sentence per reason, ready to show the user\n  confirmation_phrase  what POST wants typed back (P12-2)\n  data_export_url      Art. 15 before Art. 17 — offer the copy BEFORE\n                       the deletion, because after it there is nothing\n                       left to give them\n\nFor the plain customer, blocked_by should be [].",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const d = pm.response.json().data;",
+         "pm.collectionVariables.set('grace_days', d.grace_days);",
+         "pm.collectionVariables.set('confirmation_phrase', d.confirmation_phrase);",
+         "pm.test('Not pending yet', () => pm.expect(d.pending).to.eql(false));",
+         "pm.test('Nothing blocks a plain customer', () => pm.expect(d.blocked_by).to.eql([]));",
+         "console.log('grace_days:', d.grace_days, '| blocked_by:', JSON.stringify(d.blocked_by));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "1b. My consents — all four types, answered or not",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "Returns every ConsentType, including the ones never answered — a client drawing a privacy screen needs the full list, not only the rows that happen to exist.\n\nPer row:\n  granted           is there an active row right now\n  version           the wording they agreed to\n  current_version   the wording in force today\n  needs_reconsent   true when those two differ (folder 3)\n  withdrawable      false for terms + privacy_policy (P12-7)\n  required          the mirror of withdrawable",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const rows = pm.response.json().data;",
+         "pm.test('All four types present', () => pm.expect(rows.length).to.eql(4));",
+         "const terms = rows.find(r => r.type === 'terms');",
+         "pm.test('Terms are not withdrawable (P12-7)', () => pm.expect(terms.withdrawable).to.eql(false));",
+         "rows.forEach(r => console.log(r.type, '| granted:', r.granted, '| version:', r.version));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "1c. Art. 15 — download my data",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/data-export",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "data-export"
+       ]
+      },
+      "description": "Built earlier, included here because it belongs to the same screen and because it is the thing to click BEFORE asking for erasure.\n\nStreams a JSON file. Deliberately does NOT contain password hashes, 2FA secrets or raw session rows — those are security material, not personal data the user needs handed back, and a leaked export containing them would be a real incident.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "pm.test('Comes back as a download', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('json'));"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "2. Consent — the append-only ledger (P12-5)",
+   "item": [
+    {
+     "name": "2a. Agree to marketing",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "201. Writes ONE row: type, the server's current version, granted_at, plus the IP and user agent.\n\nThe IP is not tracking — a consent record that cannot say where it came from is weak evidence.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"marketing\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+         "const d = pm.response.json().data;",
+         "pm.collectionVariables.set('marketing_version', d.version);",
+         "console.log('recorded version:', d.version);"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "2b. Agree to marketing AGAIN — idempotent",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "Still 201, and the response is the SAME row. A client re-sending its checkbox state must not pile up a new row every time.\n\nCheck in the DB:\n  SELECT COUNT(*) FROM user_consents WHERE type='marketing' AND user_id=<you>;\nIt must still be 1.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"marketing\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+         "const d = pm.response.json().data;",
+         "pm.test('Same version, not a new one', () => pm.expect(d.version).to.eql(pm.collectionVariables.get('marketing_version')));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "2c. Confirm it reads back as granted",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "marketing.granted should now be true and needs_reconsent false.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const m = pm.response.json().data.find(r => r.type === 'marketing');",
+         "pm.test('Marketing granted', () => pm.expect(m.granted).to.eql(true));",
+         "pm.test('No reconsent needed', () => pm.expect(m.needs_reconsent).to.eql(false));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "2d. Withdraw marketing",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents/marketing",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents",
+        "marketing"
+       ]
+      },
+      "description": "200. Art. 7(3): withdrawing must be as easy as agreeing was — so this is one call with no password and no confirmation phrase.\n\nThe row is NOT deleted. withdrawn_at is stamped on it. Check:\n  SELECT type, version, granted_at, withdrawn_at, superseded_at\n  FROM user_consents WHERE user_id=<you>;\n\nThe row is still there, and it still says we were allowed to email this person between granted_at and withdrawn_at. That is the whole point of the table.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const m = pm.response.json().data.find(r => r.type === 'marketing');",
+         "pm.test('Now reads as not granted', () => pm.expect(m.granted).to.eql(false));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "2e. Agree to document processing",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "The AI PRE-CHECK on identity documents specifically — the genuinely optional part.\n\nKYC itself rests on legal obligation, not consent, so withdrawing this does not stop a human reviewing the documents. It only stops them being sent to an automated checker first.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"document_processing\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "2f. Agree to the terms",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "201. This is the row that has to survive erasure (C61) — it is the evidence we were permitted to hold the data at all.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"terms\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "2g. Agree to the privacy policy",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "201. Folder 3 uses this one to show version supersession.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"privacy_policy\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+         "pm.collectionVariables.set('policy_version_before', pm.response.json().data.version);"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "3. P12-6 — when the wording changes",
+   "item": [
+    {
+     "name": "3a. READ THIS — bump the policy version by hand",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/up",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "up"
+       ]
+      },
+      "description": "Nothing to send. This folder needs one change outside Postman.\n\nRun 2g first, then:\n\n1) In .env add or change:\n     PRIVACY_POLICY_VERSION=2027-06-01\n2) php artisan config:clear\n3) run 3b, then 3c.\n\nWHY THIS MATTERS\nA consent record is only evidence if it says WHAT was agreed to. When the\npolicy text changes, the old agreement does not cover the new text — but the\nuser never refused anything either. Those two states must never be\nconfusable, so they are different columns:\n\n  withdrawn_at    the user said no\n  superseded_at   the document changed under them\n\nTwo years later, 'they refused' and 'we rewrote it' have completely\ndifferent legal consequences.",
+      "auth": {
+       "type": "noauth"
+      }
+     }
+    },
+    {
+     "name": "3b. Read it back — needs_reconsent is now true",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "privacy_policy.granted is still true (the old agreement exists), but version and current_version now differ, so needs_reconsent flips to true. That flag is what makes the app show the banner.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const p = pm.response.json().data.find(r => r.type === 'privacy_policy');",
+         "pm.test('Still granted', () => pm.expect(p.granted).to.eql(true));",
+         "pm.test('But reconsent needed', () => pm.expect(p.needs_reconsent).to.eql(true));",
+         "console.log('agreed to:', p.version, '| in force now:', p.current_version);"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "3c. Agree to the new wording",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "201 and a NEW row. Then check the DB:\n\n  SELECT id, version, withdrawn_at, superseded_at\n  FROM user_consents WHERE type='privacy_policy' AND user_id=<you>;\n\nTwo rows:\n  old -> superseded_at set, withdrawn_at NULL\n  new -> both NULL, this is the active one\n\nThe old row was never touched otherwise. Nothing in this table is ever\nupdated in place or deleted.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"privacy_policy\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+         "const d = pm.response.json().data;",
+         "pm.test('A different version was recorded', () => pm.expect(d.version).to.not.eql(pm.collectionVariables.get('policy_version_before')));",
+         "console.log('before:', pm.collectionVariables.get('policy_version_before'), '-> now:', d.version);"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "3d. P12-6 — a client cannot claim an older version",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "Sends version: 1999-01-01 in the body. It is IGNORED — the request only accepts `type`, and the server records the version currently in force.\n\nOtherwise a client could claim the user agreed to wording it never showed them, which is exactly the kind of record that falls apart under scrutiny.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"marketing\",\n  \"version\": \"1999-01-01\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+         "const d = pm.response.json().data;",
+         "pm.test('Server version wins', () => pm.expect(d.version).to.not.eql('1999-01-01'));",
+         "console.log('client asked for 1999-01-01, server recorded:', d.version);"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "4. Erasure — request and cancel (P12-2, P12-3)",
+   "item": [
+    {
+     "name": "4a. Ask to be deleted — saves scheduled_for",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "202 Accepted, not 200. Nothing has been deleted — a request was recorded and a date was set.\n\nTWO guards on this call, stopping two different mistakes:\n\n  password      stops someone ELSE doing it. A stolen access token is\n                enough to READ the account; it must not be enough to\n                destroy it.\n  confirmation  stops the OWNER doing it by accident. A mis-tapped\n                button on a phone cannot type a phrase.\n\nThen check your inbox. The confirmation email is sent NOW, not when the\nsweep runs (C65) — after the sweep there is no address left to send to.\nIt is also the only chance the real owner gets to stop a deletion they\nnever asked for.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"password\": \"{{customer_password}}\",\n  \"confirmation\": \"DELETE MY ACCOUNT\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 202\", () => pm.response.to.have.status(202));",
+         "const d = pm.response.json().data;",
+         "pm.collectionVariables.set('scheduled_for', d.scheduled_for);",
+         "pm.test('A date was set', () => pm.expect(d.scheduled_for).to.be.a('string'));",
+         "console.log('scheduled_for:', d.scheduled_for, '(grace:', pm.collectionVariables.get('grace_days'), 'days)');"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "4b. Status now says pending",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "pending: true, requested_at and scheduled_for filled.\n\nNote what has NOT changed: you are still logged in, your profile is intact, your tokens still work. Erasure waits (P12-3).",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const d = pm.response.json().data;",
+         "pm.test('Pending', () => pm.expect(d.pending).to.eql(true));",
+         "pm.test('Same date as 4a', () => pm.expect(d.scheduled_for).to.eql(pm.collectionVariables.get('scheduled_for')));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "4c. Changed my mind — cancel",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "200. erasure_requested_at is cleared and a second email goes out saying nothing was removed.\n\nThat email also says: if it was not you who cancelled, change your password. The grace period cuts both ways.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "4d. Confirm it is gone",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "pending back to false, scheduled_for null. The account is exactly as it was.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const d = pm.response.json().data;",
+         "pm.test('Not pending', () => pm.expect(d.pending).to.eql(false));",
+         "pm.test('No date', () => pm.expect(d.scheduled_for).to.eql(null));"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "5. C60 — a store owner must close the store first",
+   "item": [
+    {
+     "name": "5a. READ THIS — what this folder is actually testing",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/up",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "up"
+       ]
+      },
+      "description": "Needs {{seller_token}} from folder 0 (B1 + B2), for a user who OWNS an\nopen store.\n\nTHE REASONING\nA store is not personal data. It is a trading entity with buyers behind it,\nopen disputes, tax records, and AML records tied to its identity documents.\nErasing the owner out from under it would leave a live shopfront with nobody\nlegally behind it.\n\nSo the two flows CHAIN, and both halves already existed before A5:\n\n  close the store      Phase 8b\n  -> its KYC documents live out their retention window    Phase 9a\n  -> then erasure is allowed\n\nNothing new had to be built to make this correct. The guard just refuses to\nlet the first step be skipped.\n\nIt checks OWNERSHIP, not membership. A manager or staff member owns nothing,\nso somebody else's store never blocks their erasure — test that separately\nwith a staff token if you want to see it.",
+      "auth": {
+       "type": "noauth"
+      }
+     }
+    },
+    {
+     "name": "5b. Owner's status — blocked_by explains itself",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "pending: false, but blocked_by now has one entry:\n\n  \"Your store \\\"...\\\" is still open. Close the store first, then ask for\n   your account to be deleted.\"\n\nThat string is written for the user, not for a log. The UI shows it as-is, which is why the blocker interface returns a sentence rather than a code.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{seller_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "const d = pm.response.json().data;",
+         "pm.test('One blocker', () => pm.expect(d.blocked_by.length).to.eql(1));",
+         "console.log('blocked_by:', d.blocked_by[0]);"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "5c. Try anyway -> 409",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "409 Conflict, with reasons[].\n\n409 and not 403 on purpose: the request is LEGITIMATE and will be allowed later. The account is simply in a state that cannot accept it yet. 403 would say 'you may never do this', which is wrong.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"password\": \"{{seller_password}}\",\n  \"confirmation\": \"DELETE MY ACCOUNT\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{seller_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+         "const j = pm.response.json();",
+         "pm.test('Reasons are returned', () => pm.expect(j.reasons.length).to.be.above(0));",
+         "console.log(JSON.stringify(j.reasons));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "5d. Close the store (Phase 8b)",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/seller/profile/close",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "seller",
+        "profile",
+        "close"
+       ]
+      },
+      "description": "Set {{store_name}} in the collection Variables to the EXACT store name first — closing has its own typed confirmation.\n\nThis is the step the blocker was insisting on. It also starts the Phase 9a retention clock on the store's identity documents.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"confirm_store_name\": \"{{store_name}}\",\n  \"reason\": \"Closing down and deleting my account.\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{seller_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+         "console.log('store closed — the retention clock on its KYC documents starts now');"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "5e. Now the same request is allowed -> 202",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "202. Same call, same user, same password — the only thing that changed is the store's status.\n\nNote what did NOT happen: the store's KYC documents were not deleted early. Erasure does not shortcut a legal retention clock; those files go when Phase 9a's window says they go.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"password\": \"{{seller_password}}\",\n  \"confirmation\": \"DELETE MY ACCOUNT\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{seller_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 202\", () => pm.response.to.have.status(202));",
+         "console.log('scheduled_for:', pm.response.json().data.scheduled_for);"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "5f. Tidy up — cancel it",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "Unless you actually want this seller erased on the next sweep, cancel here. The store stays closed; use POST /v1/seller/profile/reopen to ask for it back.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{seller_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "6. The nightly sweep (a command, not an endpoint)",
+   "item": [
+    {
+     "name": "6a. READ THIS — how to watch the erasure actually happen",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/up",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "up"
+       ]
+      },
+      "description": "There is no endpoint that erases an account. Deliberately: a destructive,\nirreversible job belongs on a schedule where it can be reasoned about, not on\na request that a client can fire twice.\n\n  Schedule::command('users:process-erasure-requests')->dailyAt('04:00')\n\n04:00 is AFTER the 03:30 KYC retention purge, so on a night when a closed\nstore's documents finally age out, they are gone before the owner's account\nis anonymised. The two never race.\n\nSTEP 1 — nothing is due yet\n  Run 4a again (request erasure), then:\n    php artisan users:process-erasure-requests\n  Expect: 'Erasure sweep: 0 erased, 0 cancelled (blocked), 0 failed.'\n  The grace period has not passed, so there is nothing to do.\n\nSTEP 2 — make it due\n  In .env:  PRIVACY_ERASURE_GRACE_DAYS=0\n  php artisan config:clear\n  php artisan users:process-erasure-requests\n  Expect: 'Erasure sweep: 1 erased, 0 cancelled (blocked), 0 failed.'\n\n  Put the grace period BACK afterwards. 0 days in production means a\n  hijacked session is a permanent loss instead of a recoverable incident.\n\nSTEP 3 — look at what survived\n  SELECT id, uuid, name, email, phone, status, erased_at, deleted_at\n  FROM users WHERE id = <that user>;\n\n  The ROW IS STILL THERE (C59). name='Deleted user',\n  email='erased-<uuid>@erased.invalid' (RFC 6761 reserves .invalid so it can\n  never resolve or receive mail), phone NULL, status inactive, erased_at and\n  deleted_at set. The uuid is kept — it is the only handle left and it says\n  nothing about anybody.\n\n  Why not DELETE the row? Because audit_logs, user_consents, seller_profiles\n  and later orders all point at users.id. A cascade delete here would take\n  the audit trail and the consent ledger with it — destroying the very\n  evidence that we honoured the request.\n\nSTEP 4 — what is gone\n  SELECT * FROM user_profiles       WHERE user_id = <id>;   -- empty\n  SELECT * FROM user_addresses      WHERE user_id = <id>;   -- empty\n  SELECT * FROM user_preferences    WHERE user_id = <id>;   -- empty\n  SELECT * FROM user_social_accounts WHERE user_id = <id>;  -- empty\n  SELECT * FROM personal_access_tokens WHERE tokenable_id = <id>; -- empty\n  SELECT * FROM model_has_roles     WHERE model_id = <id>;  -- empty\n  SELECT * FROM seller_team_members WHERE user_id = <id>;   -- empty\n  The avatar FILE is gone from storage too, deleted before the row that\n  pointed at it.\n\nSTEP 5 — what SURVIVED, and why\n  SELECT * FROM user_consents WHERE user_id = <id>;\n  Still there (C61). These rows are the evidence we were PERMITTED to hold\n  the data. Deleting them with the data would destroy the defence for\n  everything we did before the request arrived.\n\n  SELECT action, description, new_values FROM audit_logs\n  WHERE subject_id = '<id>' ORDER BY id DESC;\n  You will see user.erasure.requested and user.erasure.completed.\n\n  Now look closely at new_values on the completed row: id, uuid and a date.\n  NO email, NO name, NO phone (C64). Everywhere else in this codebase an\n  audit row records old and new values — here it must not, because an audit\n  row reading 'erased john@example.com' would put the personal data straight\n  back into permanent storage and quietly undo the erasure it was recording.",
+      "auth": {
+       "type": "noauth"
+      }
+     }
+    },
+    {
+     "name": "6b. The erased user's old token is dead",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/me",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "me"
+       ]
+      },
+      "description": "Paste the erased user's OLD token into {{customer_token}} and send this.\n\n401. Three independent locks had to hold for that: the tokens were deleted, the status cannot log in, and the row is soft-deleted so the login lookup never finds the email. Any one of them failing silently would leave a way back into a 'deleted' account.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "6c. C63 — a blocker that appears DURING the grace period",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/up",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "up"
+       ]
+      },
+      "description": "The one case that is easy to get wrong, and worth reproducing by hand.\n\nFourteen days is long enough for someone to open a store after asking to be\nerased. If the sweep simply skipped them, the request would sit in the queue\nforever and nobody would ever be told.\n\nTO REPRODUCE\n1) As a plain customer, request erasure (4a).\n2) Before the sweep runs, have that user apply and be approved as a seller,\n   so they own an open store.\n3) PRIVACY_ERASURE_GRACE_DAYS=0, config:clear\n4) php artisan users:process-erasure-requests\n\nExpect: 'Erasure sweep: 0 erased, 1 cancelled (blocked), 0 failed.'\n\n  - erasure_requested_at is cleared\n  - erased_at stays NULL — nothing was touched\n  - an email goes out saying why, so they can ask again once the store is\n    closed\n  - audit_logs gets user.erasure.cancelled with cancelled_by: 'system'\n\nKNOWN GAP (D6, written in the blueprint rather than hidden)\nNothing currently stops a user with a pending erasure from applying to sell\nin the first place. It is not a hole — this re-check catches it — but the\nbetter place to refuse it is the seller application itself. It is recorded,\nnot quietly widened into this phase.",
+      "auth": {
+       "type": "noauth"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "7. Error cases (expected failures)",
+   "item": [
+    {
+     "name": "E1. Wrong password -> 422",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "422 on `password`.\n\nNote this is NOT Laravel's current_password:sanctum rule (C67). That rule calls validate() on the named guard, and Sanctum's guard is a RequestGuard whose validate() expects a 'request' key in the credentials — so it THROWS instead of returning false. The hash is checked directly, which works under any guard.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"password\": \"definitely-not-my-password\",\n  \"confirmation\": \"DELETE MY ACCOUNT\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+         "pm.test('Field error on password', () => pm.expect(pm.response.json().errors).to.have.property('password'));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E2. Phrase in the wrong case -> 422",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "Sends 'delete my account' in lower case. 422 on `confirmation`.\n\nExact match on purpose. A phrase that tolerates near-misses stops being a deliberate act.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"password\": \"{{customer_password}}\",\n  \"confirmation\": \"delete my account\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+         "pm.test('Field error on confirmation', () => pm.expect(pm.response.json().errors).to.have.property('confirmation'));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E3. No confirmation at all -> 422",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "Password only. Still 422 — both guards are required, neither substitutes for the other.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"password\": \"{{customer_password}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E4. Request twice -> 409 + the date",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "Run 4a first so something is pending, then send this.\n\n409, and the response repeats requested_at and scheduled_for — so a client that lost track of state learns the date from the error instead of having to ask again.\n\nCancel with 4c afterwards.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"password\": \"{{customer_password}}\",\n  \"confirmation\": \"DELETE MY ACCOUNT\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 409\", () => pm.response.to.have.status(409));",
+         "pm.test('The date comes back in the error', () => pm.expect(pm.response.json()).to.have.property('scheduled_for'));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E5. Cancel with nothing pending -> 404",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "404. There is no request to cancel.\n\n404 rather than 200: cancelling something that does not exist is almost always a client that thinks the account is in a different state than it is, and silently saying 'fine' hides that.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 404\", () => pm.response.to.have.status(404));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E6. P12-7 — withdraw the terms -> 422",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents/terms",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents",
+        "terms"
+       ]
+      },
+      "description": "422, shaped like a field error on `type` so the privacy screen can put the message right next to the toggle the user just tried to turn off.\n\nThere is no coherent account that exists while its terms are withdrawn. Asking to withdraw them is asking to close the account, so the API says exactly that instead of pretending to toggle something.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));",
+         "const j = pm.response.json();",
+         "pm.test('Field error on type', () => pm.expect(j.errors).to.have.property('type'));",
+         "console.log(j.message);"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E7. Withdraw the privacy policy -> 422",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents/privacy_policy",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents",
+        "privacy_policy"
+       ]
+      },
+      "description": "Same reasoning as E6.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E8. Unknown consent type in the body -> 422",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       },
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "422. The enum is the allow-list; anything outside it never reaches the service.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"type\": \"sell_my_data\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      },
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E9. Unknown consent type in the URL -> 422",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents/sell_my_data",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents",
+        "sell_my_data"
+       ]
+      },
+      "description": "422, NOT a 500.\n\nIt is a route parameter, so ConsentType::tryFrom is used rather than ::from — otherwise an unknown value would be an uncaught ValueError and a raw 500.",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 422\", () => pm.response.to.have.status(422));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E10. Withdraw something never granted -> 200",
+     "request": {
+      "method": "DELETE",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents/document_processing",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents",
+        "document_processing"
+       ]
+      },
+      "description": "200, not an error.\n\nThe outcome asked for is 'I do not consent to this', and that is already true. Asking twice for the same outcome is not a mistake, so there is nothing to report. (Run this on a type you have NOT granted.)",
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{customer_token}}",
+         "type": "string"
+        }
+       ]
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E11. No token -> 401",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/erasure",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "erasure"
+       ]
+      },
+      "description": "401. Every route in this collection sits behind auth:sanctum + active.",
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+        ]
+       }
+      }
+     ]
+    },
+    {
+     "name": "E12. No token on consents -> 401",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Accept",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/api/v1/privacy/consents",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "api",
+        "v1",
+        "privacy",
+        "consents"
+       ]
+      },
+      "description": "401.\n\nWorth noting what is NOT possible anywhere in this controller: there is no {user} parameter on a single route. Everything resolves off $request->user(), so none of it can be aimed at somebody else's account. There is no IDOR surface to test for.",
+      "auth": {
+       "type": "noauth"
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test(\"Status is 401\", () => pm.response.to.have.status(401));"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

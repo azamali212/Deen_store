@@ -104,4 +104,11 @@ enum AuditAction: string
     case SELLER_STORE_NAME_CHANGE_REQUESTED = 'seller.store.name_change_requested';
     case SELLER_STORE_RENAMED = 'seller.store.renamed';
     case SELLER_STORE_NAME_CHANGE_REJECTED = 'seller.store.name_change_rejected';
+
+    // ---- A5 / Phase 12: erasure and consent ----
+    case USER_ERASURE_REQUESTED = 'user.erasure.requested';
+    case USER_ERASURE_CANCELLED = 'user.erasure.cancelled';
+    case USER_ERASED = 'user.erasure.completed';
+    case USER_CONSENT_GRANTED = 'user.consent.granted';
+    case USER_CONSENT_WITHDRAWN = 'user.consent.withdrawn';
 }

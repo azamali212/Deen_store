@@ -38,7 +38,7 @@ final class SellerRenewalQuery
     {
         return SellerDocumentRenewal::query()
             ->where('status', SellerRenewalStatus::PENDING->value)
-            ->with('sellerProfile:id,store_name,user_id,kyc_status,cnic_expires_at,licence_expires_at')
+            ->with('sellerProfile:id,store_name,user_id,kyc_status,identity_expires_at,licence_expires_at')
             ->oldest('id');
     }
 }

@@ -32,7 +32,17 @@ final class UserResource extends JsonResource
 
             'roles' => $this->getRoleNames()->values(),
 
-            'permissions' => $this->getPermissionNames()->values(),
+            // getPermissionNames() returns DIRECTLY assigned permissions only.
+            // This app attaches permissions to ROLES and never to a user, so
+            // that method returned [] for every user since the day this was
+            // written. getAllPermissions() merges the ones held via roles.
+            //
+            // Note for super_admin: AuthServiceProvider also has a
+            // Gate::before bypass, so they pass every gate regardless. Their
+            // list is complete here only because RolePermissionMap gives the
+            // role every permission explicitly — if that ever changed, this
+            // list would go empty while they could still do everything.
+            'permissions' => $this->getAllPermissions()->pluck('name')->values(),
 
             'email_verified_at' => $this->email_verified_at,
 

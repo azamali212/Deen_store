@@ -11,6 +11,7 @@ use App\Domain\Seller\Enums\SellerKycStatus;
 use App\Domain\Seller\Enums\SellerRenewalStatus;
 use App\Domain\Seller\Exceptions\CannotManageOwnStoreException;
 use App\Domain\Seller\Exceptions\DocumentRejectedByAiException;
+use App\Domain\Seller\Exceptions\DocumentTypeNotAcceptedException;
 use App\Domain\Seller\Exceptions\InvalidRenewalStateException;
 use App\Domain\Seller\Exceptions\SellerRenewalNotFoundException;
 use App\Domain\Seller\Repositories\Contracts\SellerProfileRepositoryInterface;
@@ -40,6 +41,7 @@ final readonly class SellerDocumentRenewalService
         private SellerKycService $kyc,
         private DocumentStorageInterface $storage,
         private DocumentVerifierInterface $verifier,
+        private SellerDocumentRequirements $requirements,
     ) {}
 
     public function upload(int $userId, SellerDocumentType $type, UploadedFile $file): SellerDocumentRenewal
@@ -50,6 +52,14 @@ final readonly class SellerDocumentRenewalService
 
         if (! $type->isRenewable()) {
             throw InvalidRenewalStateException::notRenewable($type->value);
+        }
+
+        // A3 — and it has to be a document this seller's country uses. A
+        // UK seller renews a passport, never a CNIC.
+        $country = (string) ($profile->country ?? 'PK');
+
+        if (! $this->requirements->allows($country, $type)) {
+            throw DocumentTypeNotAcceptedException::forCountry($type, $country);
         }
 
         // One pending replacement per document type: a second upload would

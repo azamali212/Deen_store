@@ -6,6 +6,7 @@ namespace Tests\Feature\Seller;
 
 use App\Domain\Seller\Enums\SellerApplicationStatus;
 use App\Domain\Seller\Enums\SellerDocumentType;
+use App\Domain\Seller\Services\SellerDocumentRequirements;
 use App\Domain\Seller\Notifications\SellerApplicationSubmittedNotification;
 use App\Models\SellerApplication;
 use App\Models\SellerApplicationDocument;
@@ -52,6 +53,7 @@ final class SellerApplicationTest extends TestCase
             'store_name' => 'Zimal Fabrics',
             'business_name' => 'Zimal Fabrics Pvt Ltd',
             'business_type' => 'company',
+            'country' => 'PK',
             'accept_document_processing' => true,
         ], $overrides);
     }
@@ -66,7 +68,16 @@ final class SellerApplicationTest extends TestCase
 
     private function giveApplicationAllDocuments(SellerApplication $application): void
     {
-        foreach (SellerDocumentType::cases() as $type) {
+        // NOT SellerDocumentType::cases(). A3 turned that enum into a
+        // catalogue of every identity document across every country, so
+        // "one of each case" stopped meaning "a complete application" —
+        // it now means a Pakistani applicant holding a British driving
+        // licence and a German national ID. Ask the country rules what
+        // this application actually needs.
+        $required = app(SellerDocumentRequirements::class)
+            ->requiredTypes($application->country, []);
+
+        foreach ($required as $type) {
             SellerApplicationDocument::factory()
                 ->ofType($type)
                 ->create(['seller_application_id' => $application->id]);

@@ -30,6 +30,7 @@ final class FakeDocumentVerifier implements DocumentVerifierInterface
         public readonly string $businessName = 'Zimal Fabrics Pvt Ltd',
         public readonly string $cnicNumber = '3520212345671',
         public readonly string $accountLast4 = '1234',
+        public readonly string $passportNumber = 'GBR123456789',
     ) {}
 
     public function returnFor(SellerDocumentType $type, DocumentVerificationResultDTO $result): self
@@ -67,12 +68,28 @@ final class FakeDocumentVerifier implements DocumentVerifierInterface
             SellerDocumentType::CNIC_FRONT => [
                 'full_name' => $this->personName,
                 'father_name' => 'Muhammad Ayub',
-                'cnic_number' => $this->cnicNumber,
+                'identity_number' => $this->cnicNumber,
                 'date_of_birth' => '1995-05-10',
                 'date_of_expiry' => now()->addYears(5)->toDateString(),
             ],
             SellerDocumentType::CNIC_BACK => [
-                'cnic_number' => $this->cnicNumber,
+                'identity_number' => $this->cnicNumber,
+            ],
+            SellerDocumentType::PASSPORT => [
+                'full_name' => $this->personName,
+                'identity_number' => $this->passportNumber,
+                'date_of_birth' => '1995-05-10',
+                'date_of_expiry' => now()->addYears(7)->toDateString(),
+                'issuing_country' => 'United Kingdom',
+            ],
+            SellerDocumentType::DRIVING_LICENCE_FRONT, SellerDocumentType::NATIONAL_ID_FRONT => [
+                'full_name' => $this->personName,
+                'identity_number' => $this->passportNumber,
+                'date_of_birth' => '1995-05-10',
+                'date_of_expiry' => now()->addYears(4)->toDateString(),
+            ],
+            SellerDocumentType::DRIVING_LICENCE_BACK, SellerDocumentType::NATIONAL_ID_BACK => [
+                'identity_number' => $this->passportNumber,
             ],
             SellerDocumentType::BUSINESS_LICENSE => [
                 'business_name' => $this->businessName,

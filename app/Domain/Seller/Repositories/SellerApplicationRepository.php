@@ -42,6 +42,7 @@ final readonly class SellerApplicationRepository implements SellerApplicationRep
             'store_name' => $dto->storeName,
             'business_name' => $dto->businessName,
             'business_type' => $dto->businessType->value,
+            'country' => $dto->country,
             // Always set in code, never a DB default (C9).
             'status' => SellerApplicationStatus::DRAFT->value,
             // The request only lets this through when the box was ticked.
@@ -79,7 +80,7 @@ final readonly class SellerApplicationRepository implements SellerApplicationRep
     public function uploadedDocumentTypes(SellerApplication $application): array
     {
         // toBase() skips the enum cast, so these are plain strings that can
-        // be array_diff'ed against SellerDocumentType::required().
+        // be compared against what the seller's COUNTRY requires (A3).
         return $application->documents()
             ->toBase()
             ->pluck('document_type')

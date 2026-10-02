@@ -24,6 +24,7 @@ final class SellerApplicationFactory extends Factory
             'store_name' => fake()->unique()->bothify('Store ####??'),
             'business_name' => fake()->company(),
             'business_type' => fake()->randomElement(BusinessType::cases()),
+            'country' => 'PK',
             'status' => SellerApplicationStatus::DRAFT,
             'rejection_reason' => null,
             'submitted_at' => null,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Seller;
 
 use App\Domain\Seller\Enums\SellerDocumentType;
+use App\Domain\Seller\Services\SellerDocumentRequirements;
 use App\Domain\Seller\Notifications\SellerApplicationApprovedNotification;
 use App\Domain\Seller\Notifications\SellerApplicationRejectedNotification;
 use App\Models\SellerApplication;
@@ -55,7 +56,16 @@ final class AdminSellerApplicationTest extends TestCase
             ->pending()
             ->create(['user_id' => ($applicant ?? $this->applicant())->id]);
 
-        foreach (SellerDocumentType::cases() as $type) {
+        // NOT SellerDocumentType::cases(). A3 turned that enum into a
+        // catalogue of every identity document across every country, so
+        // "one of each case" stopped meaning "a complete application" —
+        // it now means a Pakistani applicant holding a British driving
+        // licence and a German national ID. Ask the country rules what
+        // this application actually needs.
+        $required = app(SellerDocumentRequirements::class)
+            ->requiredTypes($application->country, []);
+
+        foreach ($required as $type) {
             SellerApplicationDocument::factory()
                 ->ofType($type)
                 ->create(['seller_application_id' => $application->id]);

@@ -20,6 +20,7 @@ final class SellerProfileResource extends JsonResource
             'store_name' => $this->store_name,
             'business_name' => $this->business_name,
             'business_type' => $this->business_type->value,
+            'country' => $this->country,
             'status' => $this->status->value,
             'status_label' => $this->status->label(),
 
@@ -28,7 +29,7 @@ final class SellerProfileResource extends JsonResource
                 'status' => $this->kycStatus()->value,
                 'status_label' => $this->kycStatus()->label(),
                 'expires_on' => $this->earliestKycExpiry()?->toDateString(),
-                'cnic_expires_at' => $this->cnic_expires_at?->toDateString(),
+                'identity_expires_at' => $this->identity_expires_at?->toDateString(),
                 'licence_expires_at' => $this->licence_expires_at?->toDateString(),
                 'blocks_payout' => $this->kycStatus()->blocksPayout(),
             ],
@@ -62,6 +63,7 @@ final class SellerProfileResource extends JsonResource
                 'bank_name' => $this->bank_name,
                 'account_number_masked' => $this->resource->maskedBankAccount(),
                 // P5-2 / P6-2
+                'branch_code' => $this->maskedBankBranchCode(),
                 'verification_status' => $this->bank_verification_status?->value,
                 'verification_label' => $this->bank_verification_status?->label(),
                 'payout_ready' => $this->resource->isPayoutBankVerified(),

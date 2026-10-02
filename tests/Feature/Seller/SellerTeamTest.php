@@ -437,6 +437,7 @@ final class SellerTeamTest extends TestCase
             'store_name' => 'Staff Side Business',
             'business_name' => 'Staff Side Business Pvt Ltd',
             'business_type' => 'sole_proprietor',
+            'country' => 'PK',
             'accept_document_processing' => true,
         ])->assertStatus(409);
 

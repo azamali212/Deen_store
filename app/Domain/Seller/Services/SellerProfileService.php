@@ -22,6 +22,7 @@ use App\Domain\Seller\Exceptions\DuplicateStoreNameException;
 use App\Domain\Seller\Exceptions\InvalidStoreNameChangeException;
 use App\Domain\Seller\Repositories\Contracts\SellerApplicationRepositoryInterface;
 use App\Domain\Seller\Repositories\Contracts\SellerProfileRepositoryInterface;
+use App\Domain\Seller\Support\BankAccountValidator;
 use App\Models\SellerProfile;
 use App\Models\SellerTeamMember;
 use Illuminate\Http\UploadedFile;
@@ -38,6 +39,7 @@ final readonly class SellerProfileService
         private DocumentVerifierInterface $verifier,
         private SellerTeamService $team,
         private SellerApplicationRepositoryInterface $applications,
+        private BankAccountValidator $bank,
     ) {}
 
     /**
@@ -116,9 +118,27 @@ final readonly class SellerProfileService
         if ($dto->hasBankDetails()) {
             // $profile->bank_account_number is transparently DECRYPTED by the
             // `encrypted` cast, so this is a plain-text comparison in memory.
+            // A4 — is this an account this seller's country could have?
+            // Checked BEFORE anything is compared or saved. An IBAN is
+            // accepted from anyone (P11-2) and is checked with mod-97,
+            // which catches the mistyped digit a regex never would.
+            $this->bank->validate(
+                (string) ($profile->country ?? 'PK'),
+                (string) $dto->bankAccountNumber,
+                $dto->bankBranchCode,
+            );
+
+            $branchCode = $dto->bankBranchCode !== null && $dto->bankBranchCode !== ''
+                ? $this->bank->normalise($dto->bankBranchCode)
+                : null;
+
+            // C58 — the same account number with a DIFFERENT sort code is
+            // a different account, so it counts as a change and clears the
+            // proof exactly as a new number does.
             $bankIsDifferent = $profile->bank_account_number !== $dto->bankAccountNumber
                 || $profile->bank_name !== $dto->bankName
-                || $profile->bank_account_title !== $dto->bankAccountTitle;
+                || $profile->bank_account_title !== $dto->bankAccountTitle
+                || $profile->bank_branch_code !== $branchCode;
 
             if ($bankIsDifferent) {
                 $newLast4 = substr((string) $dto->bankAccountNumber, -4);
@@ -144,6 +164,7 @@ final readonly class SellerProfileService
                     'bank_account_title' => $dto->bankAccountTitle,
                     'bank_name' => $dto->bankName,
                     'bank_account_number' => $dto->bankAccountNumber, // encrypted on save
+                    'bank_branch_code' => $branchCode,                 // encrypted on save
                     'bank_account_last4' => $newLast4,
                     'bank_verification_status' => $verificationStatus->value,
                     // P6-2: a new account starts over — an earlier proof and

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Seller;
 
 use App\Domain\Seller\Enums\SellerDocumentType;
+use App\Domain\Seller\Services\SellerDocumentRequirements;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -20,6 +21,7 @@ final class SellerApplicationResource extends JsonResource
             'store_name' => $this->store_name,
             'business_name' => $this->business_name,
             'business_type' => $this->business_type->value,
+            'country' => $this->country,
             'status' => $this->status->value,
             'status_label' => $this->status->label(),
             'rejection_reason' => $this->rejection_reason,
@@ -28,13 +30,21 @@ final class SellerApplicationResource extends JsonResource
             'documents' => SellerApplicationDocumentResource::collection(
                 $this->whenLoaded('documents'),
             ),
-            // Lets the frontend show exactly which upload boxes are empty.
+            // A3 — which boxes to SHOW, per country. A seller in Germany
+            // must never be asked for a CNIC, and the frontend cannot work
+            // that out for itself.
+            'required_documents' => $this->requirementGroups(),
+
+            // Which of those boxes are still empty. Follows whichever
+            // identity option they started (P10-3), so somebody who
+            // uploaded a passport is not told to go and find a driving
+            // licence as well.
             'missing_documents' => $this->whenLoaded(
                 'documents',
-                fn (): array => array_values(array_diff(
-                    SellerDocumentType::required(),
+                fn (): array => app(SellerDocumentRequirements::class)->missingTypes(
+                    (string) ($this->country ?? 'PK'),
                     $this->documents->map(fn ($document): string => $document->document_type->value)->all(),
-                )),
+                ),
             ),
             'documents_count' => $this->whenCounted('documents'),
             // Admin side only (loaded by the admin actions, never by the
@@ -64,5 +74,32 @@ final class SellerApplicationResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
+    }
+
+    /**
+     * The country's document groups, each with its options, labelled for
+     * display. Read straight from CountryDocumentMap — the API never
+     * repeats the rules, it reports them.
+     *
+     * @return array<string, array<int, array<int, array<string, string>>>>
+     */
+    private function requirementGroups(): array
+    {
+        $groups = app(SellerDocumentRequirements::class)
+            ->groupsFor((string) ($this->country ?? 'PK'));
+
+        return array_map(
+            fn (array $options): array => array_map(
+                fn (array $option): array => array_map(
+                    fn (SellerDocumentType $type): array => [
+                        'type' => $type->value,
+                        'label' => $type->label(),
+                    ],
+                    $option,
+                ),
+                $options,
+            ),
+            $groups,
+        );
     }
 }

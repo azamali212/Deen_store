@@ -5,6 +5,10 @@ use App\Domain\Moderation\Exceptions\ModerationFlagAlreadyResolvedException;
 use App\Domain\Moderation\Exceptions\ProfileContentRejectedException;
 use App\Domain\User\Exceptions\AddressLimitExceededException;
 use App\Domain\User\Exceptions\AddressNotFoundException;
+use App\Domain\User\Exceptions\ConsentNotWithdrawableException;
+use App\Domain\User\Exceptions\ErasureAlreadyRequestedException;
+use App\Domain\User\Exceptions\ErasureBlockedException;
+use App\Domain\User\Exceptions\NoErasureRequestException;
 use App\Domain\Seller\Exceptions\DuplicateStoreNameException;
 use App\Domain\Seller\Exceptions\EmailNotVerifiedForSellingException;
 use App\Domain\Seller\Exceptions\InvalidApplicationStatusTransitionException;
@@ -17,6 +21,8 @@ use App\Domain\Seller\Exceptions\SellerProfileNotFoundException;
 use App\Domain\Seller\Exceptions\DocumentRejectedByAiException;
 use App\Domain\Seller\Exceptions\DocumentVerificationUnavailableException;
 use App\Domain\Seller\Exceptions\ApplicationFailedAiChecksException;
+use App\Domain\Seller\Exceptions\InvalidBankAccountFormatException;
+use App\Domain\Seller\Exceptions\DocumentTypeNotAcceptedException;
 use App\Domain\Seller\Exceptions\InvalidStoreNameChangeException;
 use App\Domain\Seller\Exceptions\SellerStoreClosedException;
 use App\Domain\Seller\Exceptions\SellerStoreSuspendedException;
@@ -149,6 +155,55 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => $e->getMessage(),
                 ], 404);
+            },
+        );
+
+        // ---- A5: erasure and consent (BLUEPRINT section 18) ----
+
+        // 409, not 403. The request is legitimate and will be allowed later;
+        // the account is simply in a state that cannot accept it yet. The
+        // reasons array is what the UI shows as "close your store first".
+        $exceptions->render(
+            function (ErasureBlockedException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'reasons' => $e->context()['reasons'] ?? [],
+                ], 409);
+            },
+        );
+
+        $exceptions->render(
+            function (ErasureAlreadyRequestedException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'requested_at' => $e->context()['requested_at'] ?? null,
+                    'scheduled_for' => $e->context()['scheduled_for'] ?? null,
+                ], 409);
+            },
+        );
+
+        $exceptions->render(
+            function (NoErasureRequestException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 404);
+            },
+        );
+
+        // Shaped like a field error so the privacy screen can put it next to
+        // the toggle the user just tried to turn off.
+        $exceptions->render(
+            function (ConsentNotWithdrawableException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'errors' => [
+                        'type' => [$e->getMessage()],
+                    ],
+                ], 422);
             },
         );
 
@@ -395,6 +450,28 @@ return Application::configure(basePath: dirname(__DIR__))
                     'success' => false,
                     'message' => $e->getMessage(),
                 ], 409);
+            },
+        );
+
+        // A3 / A4 — both are validation errors about ONE field, so both
+        // travel in the shape the frontend already knows how to render.
+        $exceptions->render(
+            function (DocumentTypeNotAcceptedException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'errors' => ['document_type' => [$e->getMessage()]],
+                ], 422);
+            },
+        );
+
+        $exceptions->render(
+            function (InvalidBankAccountFormatException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'errors' => [$e->field => [$e->getMessage()]],
+                ], 422);
             },
         );
 

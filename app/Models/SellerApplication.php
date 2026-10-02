@@ -22,6 +22,7 @@ final class SellerApplication extends Model
         'store_name',
         'business_name',
         'business_type',
+        'country',
         'status',
         'rejection_reason',
         'submitted_at',

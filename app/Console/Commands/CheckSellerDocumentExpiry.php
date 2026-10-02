@@ -34,7 +34,7 @@ final class CheckSellerDocumentExpiry extends Command
             // have none (AI verification is off by default); scanning them
             // as "expired" would freeze every seller's payouts at once.
             ->where(fn (Builder $query): Builder => $query
-                ->whereNotNull('cnic_expires_at')
+                ->whereNotNull('identity_expires_at')
                 ->orWhereNotNull('licence_expires_at'))
             ->orderBy('id')
             ->chunkById(200, function ($profiles) use ($kyc, &$warned, &$expired): void {

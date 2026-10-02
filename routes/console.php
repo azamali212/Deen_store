@@ -20,3 +20,10 @@ Schedule::command('seller:check-document-expiry')
 Schedule::command('seller:purge-expired-kyc-documents')
     ->dailyAt('03:30')
     ->withoutOverlapping();
+
+// A5 / Phase 12 — the erasure sweep. Deliberately AFTER the KYC purge: on a
+// night when a closed store's documents finally age out, they are gone before
+// the owner's account is anonymised, so the two never race.
+Schedule::command('users:process-erasure-requests')
+    ->dailyAt('04:00')
+    ->withoutOverlapping();

@@ -35,6 +35,7 @@ final class SellerProfileFactory extends Factory
             'store_name' => fake()->unique()->bothify('Shop ####??'),
             'business_name' => fake()->company(),
             'business_type' => fake()->randomElement(BusinessType::cases()),
+            'country' => 'PK',
             'logo_path' => null,
             'description' => fake()->sentence(),
             'business_address' => fake()->address(),

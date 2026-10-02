@@ -1182,12 +1182,446 @@ UploadedFile::fake(), same as UploadAvatarTest.
   two people work it at once. Not before.
 
 --------------------------------------------------------------------------------
-15. OUT OF SCOPE (later)
+15. A1 — TELLING THE CLIENT WHAT IT MAY SHOW      (BUILT 2026-09-30)
+--------------------------------------------------------------------------------
+  Tests: tests/Feature/User/MeTest.php
+  Endpoint: GET /v1/me   (auth:sanctum, active)
+
+  WHAT WAS ACTUALLY MISSING. UserResource already returns the user's Spatie
+  roles AND permissions, so the login response was never as bare as it
+  first looked. What it could not answer was:
+    - WHICH store this person belongs to (id, name, status)
+    - what they may do INSIDE it
+
+  C48. The in-store powers are NOT Spatie permissions. An owner and a
+       manager both hold `marketplace.stores`, so no permission list can
+       tell them apart — the difference lives only in SellerTeamRole.
+       SellerTeamRole::abilities() now exposes those same methods as data,
+       built FROM the methods rather than hand-listed, so a new power
+       reaches every client without a second edit.
+  C49. This is its own endpoint, not part of the login response, for two
+       reasons. It goes STALE: an owner can promote a staff member while
+       they are logged in, and baked into the login payload that person
+       would see the old UI until they logged out and back in. And it keeps
+       the Auth domain from having to know about the Seller domain.
+  C50. `store_is_open` is reported SEPARATELY from the abilities. A
+       suspended store's owner still "can" manage the bank by role, but
+       every write returns 403 (C33). Both facts have to be read together,
+       so both are sent.
+
+  C51. UserResource used Spatie's getPermissionNames(), which returns
+       DIRECTLY assigned permissions only. This app attaches permissions to
+       ROLES and never to a user, so that field came back [] for EVERY user
+       from the day it was written — a silent bug nobody could see, because
+       an empty array looks like a valid answer. getAllPermissions() merges
+       the ones held via roles.
+       Found by calling the endpoint, not by reading the code: the field
+       was present and looked correct twice over.
+       Caution for super_admin: AuthServiceProvider has a Gate::before
+       bypass, so they pass every gate regardless of this list. It is
+       complete only because RolePermissionMap grants the role every
+       permission explicitly.
+
+  Hiding a button is not security. The server refuses regardless; this only
+  stops a manager being shown a bank form that 403s on save.
+
+  C69. The A1 test asserted 'payments.payouts' as a permission. It is a
+       MODULE key in PermissionMap, not a permission: permissions() builds
+       "module.action", so what actually exists is payments.payouts.view,
+       .approve and .manage. The bare key is never stored, so that one
+       assertion could only ever fail -- and the very next line of the SAME
+       test already used the correct module.action form
+       (catalog.products.create). Two halves of one test disagreed about
+       what a permission name looks like.
+       Now asserted as payments.payouts.view/.manage for the owner, and for
+       the manager as a PREFIX check (no payments.payouts.* at all) so
+       adding a fourth action to the module later cannot slip past it.
+       Third time in this project that a test was written and never run as
+       part of the full suite. A1, A3 and A5 all shipped on --filter runs.
+       The rule from here: a phase is not done until `php artisan test`
+       -- the whole thing -- is green.
+
+
+--------------------------------------------------------------------------------
+16. A3 — IDENTITY DOCUMENTS PER COUNTRY           (BUILT 2026-09-30)
+    Tests: tests/Feature/Seller/SellerCountryDocumentsTest.php
+--------------------------------------------------------------------------------
+  THE GAP: the whole KYC flow assumes Pakistan. SellerDocumentType has
+  CNIC_FRONT and CNIC_BACK, the verifier normalises the identity number to
+  exactly 13 digits, Layer 2 compares "the CNIC numbers on both sides", and
+  the expiry lands in a column called cnic_expires_at. A seller in the UK
+  has a passport, not a CNIC.
+
+  DECISIONS
+    P10-1  The country lives on the APPLICATION, chosen when it is created,
+           and is copied to seller_profiles at approval — it is part of what
+           the admin verified, like store_name and business_name (C6).
+    P10-2  Requirements are a per-country DATA map, not code. Adding a
+           country is one entry in CountryDocumentMap and nothing else.
+    P10-3  Identity documents come in ALTERNATIVES. Pakistan needs a CNIC
+           front AND back; the UK accepts a passport OR a driving licence
+           (front and back). So a requirement is a GROUP of options, and
+           each option is a set of types — not a flat list.
+    P10-4  Any country not named in the map falls back to: passport +
+           business registration + tax registration + bank statement. A
+           passport is the one identity document that exists everywhere, so
+           "every country" works from day one without inventing rules we
+           have not checked.
+    P10-5  cnic_expires_at is renamed identity_expires_at. A UK seller's
+           passport expiry sitting in a column called cnic_expires_at is a
+           lie that would confuse somebody a year from now.
+
+  C52. The verifier's `cnic` field kind forced the value to EXACTLY 13
+       digits and returned null otherwise. Correct for Pakistan, and it
+       silently destroys every passport number. It becomes a generic
+       `id_number` kind that sanitises without imposing a national format;
+       the 13-digit rule moves into the Pakistan entry of the map, where a
+       national rule belongs.
+  C53. Layer 2's checks were named and worded for the CNIC
+       (cnic_numbers_match, "Your CNIC has expired"). They are now identity
+       checks, and the front/back comparison only runs when the option the
+       seller actually used HAS two sides — a passport has one.
+  C54. crossCheck() looped over ALL SellerDocumentType::cases() and bailed
+       out the moment one was missing. That was right while every seller
+       uploaded the same five documents. With per-country requirements most
+       types are legitimately absent, so it must loop over the types THIS
+       application requires — otherwise Layer 2 silently switches itself off
+       for every seller on earth.
+
+  NEW DOCUMENT TYPES
+    passport, driving_licence_front, driving_licence_back,
+    national_id_front, national_id_back
+
+  NEW COLUMNS
+    seller_applications.country  char(2), ISO 3166-1 alpha-2, indexed
+    seller_profiles.country      char(2)
+    seller_profiles.cnic_expires_at -> identity_expires_at   (rename)
+
+  COUNTRY MAP (CountryDocumentMap) — shape
+    'PK' => identity: [[cnic_front, cnic_back]]
+            business: [[business_license]]  tax: [[tax_certificate]]
+            bank:     [[bank_statement]]    id_format: 13 digits
+    'GB' => identity: [[passport], [driving_licence_front, driving_licence_back]]
+    default => identity: [[passport]]
+
+  C55. Staging a file for linting IMMEDIATELY after writing it can capture
+       it half-written. A parse error appeared at a line that was correct
+       on disk; re-staging the same file linted clean. When a lint failure
+       makes no sense against the file you are looking at, re-stage before
+       hunting for a bug that is not there.
+
+  GUARDS
+    unknown/unsupported country at create        -> 422
+    uploading a type this country never asks for -> 422
+    submit missing a required group              -> 422 + which group
+    mixing two identity options (CNIC + passport) -> the extra one is simply
+      not required; whichever complete option exists satisfies the group
+
+  C68. missingTypes picked the wrong option when two were equally far
+       from done. "Closest option" was measured only as fewest documents
+       left, which ties a one-document option NOBODY has touched against a
+       two-document option already half finished -- and the first one
+       declared wins. On GB that meant a seller who uploaded the front of
+       their driving licence was told to go and get a passport.
+       Now: fewest left, and on a tie the option with the MOST already
+       uploaded. Someone who has started a route is told how to finish
+       THAT route.
+       Found by my own A3 test, but only once the FULL suite was run after
+       A5 -- the A3 tests had been run in isolation. Two more A3 fallouts
+       surfaced in the same run, both of them STALE TESTS rather than bad
+       code: three helpers built "a complete application" by looping over
+       SellerDocumentType::cases(), which was exactly the five required
+       documents before A3 and is now a catalogue of ten across every
+       country; and two assertions still expected the CNIC-specific
+       wording that A3 deliberately made country-neutral.
+       The lesson worth keeping: growing an enum silently changed the
+       meaning of every loop over it. A3 did not touch those three test
+       files at all.
+
+--------------------------------------------------------------------------------
+17. A4 — BANK ACCOUNTS PER COUNTRY                (BUILT 2026-09-30)
+    Tests: tests/Feature/Seller/SellerBankCountryTest.php
+--------------------------------------------------------------------------------
+  THE GAP (C19): the payout account is validated with one Pakistani regex,
+    /^(PK\d{2}[A-Z]{4}\d{16}|\d{8,24})$/
+  A German IBAN fails it. A UK sort code plus account number has nowhere to
+  go at all — there is only ONE field, and the UK needs two.
+
+  DECISIONS
+    P11-1  Some countries need TWO identifiers, not one. The UK uses a
+           6-digit sort code with an 8-digit account number; the US uses a
+           9-digit routing number. So a new column, bank_branch_code,
+           nullable and encrypted like the account number itself.
+    P11-2  An IBAN is accepted ANYWHERE, whatever the country's domestic
+           format is. A seller who knows their IBAN should never be told
+           it is wrong because we expected a sort code.
+    P11-3  IBANs are checked with the real mod-97 checksum, not a regex.
+           This is the whole point: a checksum catches a mistyped digit,
+           which is exactly how payout money goes to a stranger. A regex
+           only catches the wrong SHAPE.
+    P11-4  A country we have no rules for accepts an IBAN or a plain 8-24
+           character account number — the same fallback thinking as P10-4.
+
+  C56. The format check moved OUT of the FormRequest. A request cannot know
+       the seller's country without a database lookup of its own, and it
+       would be a second place that decides what a valid account is. The
+       request now checks SHAPE (present, a string, length); the domain
+       checks the FORMAT, where the country is already known.
+  C57. bank_branch_code is encrypted like the account number. A sort code
+       on its own is not much of a secret, but a sort code TOGETHER with an
+       account number is exactly what someone needs to take money. They are
+       stored together, so they are protected together.
+  C58. Changing the branch code counts as a bank change. Same account
+       number, different sort code, is a different account — so it clears
+       the proof and the verification exactly as a new number does (P6-2).
+
+  NEW COLUMN
+    seller_profiles.bank_branch_code   TEXT, nullable, `encrypted` cast
+
+  FORMATS (BankAccountFormatMap)
+    PK, IE, DE, FR, ES, IT, NL  -> IBAN, with that country's fixed length
+    GB                          -> sort code (6) + account number (8)
+    US                          -> routing (9) + account (4-17)
+    everywhere else             -> IBAN, or 8-24 characters
+
+  GUARDS
+    IBAN that fails mod-97                 -> 422 on bank_account_number
+    IBAN of the wrong length for its own
+      country prefix                       -> 422
+    branch code missing where required     -> 422 on bank_branch_code
+    branch code sent where not used        -> ignored, not an error
+
+--------------------------------------------------------------------------------
+18. A5 — ERASURE AND CONSENT                          (BUILT 2026-09-30)
+--------------------------------------------------------------------------------
+  THE PROBLEM, HONESTLY STATED
+
+  GDPR Art. 17 says a person can demand their data be deleted. AML rules say
+  identity records must be kept for years. Tax law says invoices must be kept
+  for years. All three are law at once, and any design that only honours one
+  of them is wrong.
+
+  Art. 17(3)(b) is the hinge: the right to erasure does not apply where
+  processing is required to comply with a legal obligation. So erasure is not
+  "delete the rows". It is: remove everything that identifies a PERSON, keep
+  everything the law obliges us to keep, and make sure what is kept can no
+  longer be tied back to them.
+
+  This is a MARKETPLACE, not a single shop, so the same request means
+  different things depending on who is asking. A buyer has personal data and
+  nothing else. A store OWNER sits behind a trading entity with its own
+  obligations. That difference is the whole reason for P12-4 below.
+
+  DECISIONS
+
+  P12-1  The user row is NEVER deleted. It is ANONYMISED IN PLACE.
+         Audit logs, consent records, seller records and (later) orders all
+         point at users.id. Hard-deleting the row would either break those
+         foreign keys or cascade the delete straight through the records we
+         are legally required to keep. So the row survives and stops
+         describing anybody: name -> "Deleted user", email -> a unique
+         non-routable placeholder, phone -> null, password -> random,
+         status -> inactive, roles -> none, and the row is soft-deleted.
+         The uuid is KEPT: it is the only handle left, and it says nothing.
+
+  P12-2  Erasure is re-authenticated and typed out.
+         POST requires the current password AND the exact phrase
+         "DELETE MY ACCOUNT". The password stops someone with a stolen token
+         destroying the account; the phrase stops the owner doing it by
+         accident. Reading the account and destroying it must not cost the
+         same.
+
+  P12-3  Erasure WAITS. A request sets erasure_requested_at; a nightly sweep
+         (users:process-erasure-requests, 04:00) does the work once the grace
+         period has passed. Default 14 days, config, comfortably inside the
+         one month Art. 12(3) allows. The window is what turns a hijacked
+         session from a permanent loss into a recoverable incident — and the
+         email sent at request time is what makes the window useful.
+
+  P12-4  Whether erasure is allowed is NOT the User domain's business.
+         config/privacy.php lists ErasureBlockerInterface implementations.
+         Each one is asked "is there a reason this account cannot be erased?"
+         and answers in a sentence the user can read. Today there is one
+         (an open store). When Orders exists, "an order that has not been
+         delivered" is one line of config, not an edit inside User.
+
+  P12-5  Consent is an APPEND-ONLY LEDGER, not a settings screen.
+         user_consents rows are never updated or deleted. A row is closed by
+         stamping withdrawn_at (the user said no) or superseded_at (the
+         wording changed and they agreed to the new one). Those two are
+         deliberately different columns: "they refused" and "the document
+         changed under them" must never be confusable when someone asks two
+         years later whether we were allowed to do something.
+         Each row also carries the IP and user agent — a consent record that
+         cannot say where it came from is weak evidence.
+
+  P12-6  The version recorded is always the SERVER's current version.
+         The client may not send one. Otherwise a client could claim the user
+         agreed to wording it never showed them.
+
+  P12-7  Terms and privacy policy are NOT withdrawable.
+         There is no coherent account that exists while its terms are
+         withdrawn. Asking to withdraw those is asking to close the account,
+         so the API says exactly that (422) instead of pretending to toggle
+         something. Marketing and automated document checking ARE
+         withdrawable, in full, per Art. 7(3).
+         Note document processing means the AI PRE-CHECK specifically — the
+         genuinely optional part. KYC itself rests on legal obligation, not
+         consent, so withdrawing this does not stop a human reviewing.
+
+  WHAT IS ERASED / WHAT SURVIVES
+
+    ERASED   user_profiles row (force-deleted; soft delete is not erasure)
+             the avatar FILE, then the row pointing at it (file first, C43)
+             user_addresses, user_preferences, user_social_accounts
+             active sessions, Sanctum tokens, trusted devices, login OTPs,
+               2FA secret and recovery codes
+             all roles and permissions
+
+    KEPT     the users row, anonymised (P12-1)
+             audit_logs — including the row that says the erasure happened
+             user_consents — C61 below
+             login_logs — security records with their own basis; once the
+               user row is anonymous they are no longer about a named person
+             seller KYC documents — until Phase 9a's own retention window
+               expires. Erasure does not shortcut a legal retention clock.
+
+  CORRECTIONS
+
+  C59. Anonymise, do not delete. Found by reading the schema, not by
+       guessing: every table that matters points at users.id. A cascade
+       delete here would take the audit trail and the consent ledger with
+       it — destroying the evidence that we honoured the request.
+
+  C60. A seller who still owns a store that is not CLOSED cannot be erased.
+       A store is not personal data; it is a trading entity with buyers,
+       disputes, tax records and AML records behind it. Erasing the owner
+       out from under it would leave a live shopfront with nobody legally
+       behind it. So the flows chain, and both halves already existed:
+       close the store (8b) -> its documents live out their retention (9a)
+       -> then erasure. Nothing new had to be built to make this correct.
+       Checks OWNERSHIP, not membership: a manager or staff member owns
+       nothing, so somebody else's store never blocks their erasure.
+
+  C61. Consent records SURVIVE erasure. They are the evidence that we were
+       permitted to hold the data in the first place; deleting them along
+       with the data would destroy the defence for everything we did before
+       the request. The foreign key deliberately has NO cascade, so the
+       database itself refuses a delete that would take them.
+
+  C62. users.email is UNIQUE and NOT NULL, so it cannot be nulled. It gets
+       erased-<uuid>@erased.invalid. RFC 6761 reserves .invalid precisely
+       so it can never resolve or receive mail, and the uuid keeps it unique
+       without saying anything about the person.
+       Also: NO new users.status value. That column is a MySQL enum, and
+       widening an enum is a table rebuild on MySQL and unreliable on
+       SQLite. INACTIVE already cannot log in; erased_at carries the
+       meaning.
+
+  C63. The sweep RE-CHECKS the blockers at the last moment.
+       Fourteen days is long enough for someone to open a store after asking
+       to be erased. Rather than leaving the request stuck in the queue
+       forever, the sweep cancels it, says why, and emails them — they can
+       ask again once the blocker is gone.
+
+  C64. The erasure audit row carries IDs ONLY.
+       Everywhere else in this codebase an audit row records old and new
+       values. Here it must not: "erased john@example.com, +44 7700 900123"
+       would put the personal data straight back into permanent storage and
+       quietly undo the erasure it was recording. So AccountErased carries
+       no User model at all — only the id and the uuid — because
+       serialising the model would drag the attributes along and the
+       temptation to log them would follow.
+       Same reason the failure path logs the user id and the exception
+       class, never the email.
+
+  C65. The confirmation email is sent at REQUEST time, never at erasure
+       time. After the sweep there is no address left to send to. It is
+       also the last message this account will ever receive, and the one
+       chance the real owner gets to stop a deletion they did not ask for.
+
+  C66. ConsentService recorded IP/user-agent behind app()->runningInConsole().
+       Under PHPUnit the SAPI is always `cli`, so that check called a real
+       HTTP request "console" and stored a null IP. Caught by writing the
+       test that asserted the IP was there. The honest discriminator is
+       whether a ROUTE matched: an artisan command has none.
+
+  C67. Laravel's `current_password:sanctum` rule is NOT usable here. It
+       calls validate() on the named guard, and Sanctum's guard is a
+       RequestGuard whose validate() expects a 'request' key in the
+       credentials — so it throws instead of returning false. The password
+       is checked with Hash::check directly, which works under any guard.
+
+  NEW TABLE
+    user_consents
+      user_id      FK, NO cascade (C61)
+      type         terms | privacy_policy | marketing | document_processing
+      version      the wording in force when it was given
+      granted_at
+      withdrawn_at the user said no
+      superseded_at the wording changed (NOT the same thing)
+      ip_address, user_agent
+
+  NEW COLUMNS
+    users.erasure_requested_at   nullable, indexed
+    users.erased_at              nullable — the idempotency flag for the sweep
+
+  ENDPOINTS (all self-service; no {user} parameter anywhere)
+    GET    /v1/privacy/data-export        Art. 15 — already built
+    GET    /v1/privacy/erasure            pending? when? blocked by what?
+    POST   /v1/privacy/erasure            202 + scheduled_for
+    DELETE /v1/privacy/erasure            cancel during grace
+    GET    /v1/privacy/consents           all four types with current state
+    POST   /v1/privacy/consents           201
+    DELETE /v1/privacy/consents/{type}
+
+  GUARDS
+    wrong password / wrong phrase            -> 422
+    already requested                       -> 409 + scheduled_for
+    already erased                          -> 409
+    open store owned by this user           -> 409 + reasons[]
+    cancel with nothing pending             -> 404
+    withdraw terms or privacy policy        -> 422 on `type`
+    unknown consent type                    -> 422
+    withdraw something never granted        -> 200 (asked twice, same outcome)
+
+  KNOWN GAP (D6)
+    Nothing currently stops a user with a PENDING erasure from applying to
+    sell. It is not a hole — C63 catches it at sweep time and cancels the
+    request with an explanation — but the better place to refuse it is the
+    seller application itself. Recorded rather than quietly widened into
+    this phase.
+
+--------------------------------------------------------------------------------
+19. STATUS — SELLER DOMAIN CLOSED                     (2026-10-02)
+--------------------------------------------------------------------------------
+  php artisan test  ->  343 passed, 0 failed.
+
+  Recorded here because of C69: a phase is not done until the WHOLE suite is
+  green. A1, A3 and A5 each shipped on a --filter run and each was hiding a
+  failure. This is the first line in this file that is backed by a full run,
+  and it is the standard every later phase is held to.
+
+  Built: Phases 2, 3, 4, 5, 6, 7, 8a, 8b, 9a, 9b, A1, A3, A4, A5.
+  38 seller endpoints + 7 privacy/me endpoints.
+  247 test methods across 18 files. 10 Postman collections.
+  Corrections C1-C69.
+
+  STILL OPEN, and both are the owner's to do, not code:
+    A2  .env still has SELLER_AI_VERIFICATION_ENABLED=true - decide and set it
+    A6  rotate the Gemini API key (it was pasted into a chat)
+
+  KNOWN GAP
+    D6  nothing stops a user with a PENDING erasure from applying to sell.
+        Not a hole - the nightly sweep re-checks and cancels with an
+        explanation (C63) - but the right place to refuse it is the seller
+        application itself.
+
+--------------------------------------------------------------------------------
+20. OUT OF SCOPE (later)
 --------------------------------------------------------------------------------
   - Hash-chained, tamper-evident audit log (D4) — Audit domain task
   - under_review status + review locking (D5)
   - S3 document storage (swap LocalDocumentStorage via the interface)
-  - Admin suspending a seller (SellerProfileStatus::SUSPENDED exists,
-    AuditAction::SELLER_SUSPENDED already exists, no endpoint yet)
   - Payouts (Payment domain — the one place that decrypts the bank number)
   - Seller products (Catalog domain)
