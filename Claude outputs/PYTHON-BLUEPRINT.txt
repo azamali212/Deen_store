@@ -1,0 +1,184 @@
+================================================================================
+PYTHON — ZERO TO HERO : BLUEPRINT
+================================================================================
+Banai   : 2026-11-10
+Kis ke liye : Azam. UK mein taxi chalata hai (subah 6 se shaam 5), code shaam
+          ko karta hai. 8 saal Laravel/PHP, lekin kaam zyada tar auth
+          controller level ka raha.
+Maqsad  : Python — phir data analysis — phir ML. Chhote projects se shuru,
+          phir ek bara enterprise-grade project.
+Qaida   : ek waqt mein EK cheez. Ye poori file usi qaide par bani hai.
+
+Pichla kaam : Zimal (Laravel multi-vendor marketplace) 2026-11-10 ko GREEN
+          par pause hua. Uski BLUEPRINT.txt ki section 17 mein likha hai ke
+          us design ka kaun sa hissa Python mein jaisa ka waisa chalta hai.
+          Jab bara project banana ho, architecture wahan se parhna — dobara
+          sochne ki zaroorat nahi, wo kaam ho chuka hai.
+
+--------------------------------------------------------------------------------
+0. SAB SE PEHLE — JO CHEEZ IS POORI FILE SE ZYADA QEEMTI HAI
+--------------------------------------------------------------------------------
+2026-11-02 ki raat, Sku.php likhte waqt, ye hua:
+
+  - chaar validation check Azam ne KHUD likhe
+  - doosra check ghalat tha: `$name < 3` likha, jabke `strlen($name) < 3`
+    chahiye tha
+  - wo check chup chaap guzar raha tha — na error, na nateeja
+  - jab wajah samajh aayi, Azam ne usay KHUD theek kiya
+
+Yehi wo cheez thi jiske baare mein wo kehta tha "mujhe nahi aati". Us mein
+EK SHAAM lagi, do saal nahi.
+
+MATLAB: masla kabhi zubaan nahi thi. Masla ye tha ke code apne hath se nahi
+nikalta tha. Python mein bhi wohi masla wapis aa sakta hai agar shuruaat
+"ye likh do" se ho.
+
+TO POORI SEEKH KA EK QAIDA: pehle khud likho, ghalat karo, wajah dhoondo.
+AI se code na maango — STEPS maango. Yehi is file ka asal.
+
+--------------------------------------------------------------------------------
+1. KAAM KARNE KE QAIDE (Zimal se seekhe hue, saath aa rahe hain)
+--------------------------------------------------------------------------------
+  Q1. AI SE CODE NAHI, STEPS MAANGO. "Mujhe sirf qadam batao, code main
+      likhun ga." Atak jao to step ka NUMBER poochho ("step 4 samajh nahi
+      aaya"), poori file na maango.
+
+  Q2. PEHLE 20 MINUTE BILKUL AKELE. Na AI, na Google. Us 20 minute ki
+      takleef hi seekhna hai. Us ke baad poochna bilkul theek hai.
+
+  Q3. TEST USI BAITHAK MEIN JISMEIN CODE. Baad mein nahi. Zimal mein teen
+      dafa "code abhi, test baad mein" ne din kharab kiye.
+
+  Q4. POORA TEST CHALAO, FILTER NAHI. `pytest` poora, `pytest -k kuch` nahi.
+      Filter likhne ka auzaar hai, mukammal hone ka saboot nahi.
+
+  Q5. CHHOTE TUKDE. Teen line likho, chalao, kaam kare, phir aage. Baarah
+      cheezein ek sath likh kar pehli dafa chalane par saat fail hoti hain
+      aur phir pata hi nahi chalta kahan se shuru karein.
+
+  Q6. JAWAB CHHOTA HO. Lamba jawab uljhan kam nahi karta, barhata hai.
+      (Zimal mein ye ghalati hui thi — ek hi jawab mein saat nayi cheezein.)
+
+  Q7. HAR FILE KE SHURU MEIN ROMAN URDU HEADER, paanch heading:
+        YE FILE KYA HAI
+        KU BANAI - ISKI ZAROORAT KU PARI
+        KAHAN KAHAN ZAROORAT PAREGI
+        AGAR YE FILE NA HOTI
+        KIS FILE SE JURI HAI
+      Roman Urdu, Urdu script nahi (RTL text code mein ulat pulat dikhta hai).
+      Agar "ku banai" apne lafzon mein na likh sako, to file samajh nahi
+      aayi — code se pehle wohi poochho.
+
+  Q8. PAISA HAMESHA POORI GINTI MEIN (Zimal L5). PKR 2,499.00 ko 249900
+      likho, float kabhi nahi. Python ke float PHP ke float jitne hi
+      khatarnaak hain — 0.1 + 0.2 wahan bhi 0.3 nahi aata.
+
+--------------------------------------------------------------------------------
+2. AZAM BEGINNER PROGRAMMER NAHI HAI — PLAN ISI HISAAB SE HAI
+--------------------------------------------------------------------------------
+Jo cheezein PEHLE SE AATI HAIN, inhein dobara seekhne mein waqt ZAYA na karo:
+  variable, if/else, loop, function, class, object, inheritance, HTTP,
+  request/response, SQL, database design, migration, test ka tasawwur,
+  MVC, API ka tasawwur, enum ka tasawwur (ProductStatus bohot gehrai se
+  samajha hua hai), array_map / array_filter / closure.
+
+To "Python seekhna" iska matlab TARJUMA hai, naye tasawwur nahi. Isi liye
+Phase 1 do-teen HAFTE ka hai, teen mahine ka nahi.
+
+JO CHEEZ WAQAI NAYI HAI, sirf ye:
+  - PHP ki ek "array" Python mein DO cheezon mein bat jati hai: list aur dict
+  - braces ki jagah INDENTATION (space) se block banta hai
+  - `$` nahi hota
+  - None / True / False (null / true / false ki jagah)
+  - list comprehension (array_map + array_filter ka chhota roop)
+  - venv — har project ke apne package
+  - "pythonic" tareeqa: wohi kaam, lekin alag aadat
+
+--------------------------------------------------------------------------------
+3. PHASES
+--------------------------------------------------------------------------------
+PHASE 0 — SETUP ...................................... 1 shaam
+  Python 3.12+, venv, pip, VS Code + Python extension, ruff (format+lint),
+  pytest. Bas. Koi bhari IDE nahi, koi course nahi khareedna.
+  venv ka matlab: har project ke apne package, alag dabbe mein — composer
+  jaisa, lekin folder ke andar.
+
+PHASE 1 — PHP SE PYTHON TARJUMA ...................... 2-3 hafte
+  Tutorial dekhne ke bajaye: jo cheez PHP mein aati hai, wo Python mein
+  likho.
+  SAB SE BEHTAR MASHQ: Zimal ka `ProductStatus` enum aur `Sku` class Python
+  mein dobara likho. Logic pehle se aata hai, to poori mehnat SIRF Python
+  par lagegi — koi naya domain sochna nahi parega.
+    PHP backed enum        -> enum.StrEnum (Python 3.11+)
+    final readonly class   -> @dataclass(frozen=True)
+    constructor ke check   -> __post_init__
+    throw InvalidArgument  -> raise ValueError
+    match ($this)          -> match/case ya dict
+    array_filter + closure -> list comprehension / filter()
+    PHPUnit + DataProvider -> pytest + @pytest.mark.parametrize
+
+PHASE 2 — LOGIC KI ROZANA MASHQ ...................... saath saath, hamesha
+  Roz 20-30 minute, Phase 1 ke SAATH, na ke baad.
+  Exercism ka Python track (muft, aasan se mushkil ki taraf).
+  Qaida Q2: 20 minute akele, phir madad.
+  Ye wo hissa hai jo waqai kami theek karta hai. Phase 1 zubaan sikhata
+  hai; ye hissa LOGIC sikhata hai. Dono alag cheezein hain.
+
+PHASE 3 — PANDAS / DATA ANALYSIS ..................... 4-6 hafte
+  Yehi pul hai. Apne aap kaam ka hai, aur ML iske baghair nahi hota.
+  Seekhne ki tartib: CSV parhna -> saaf karna -> groupby -> merge -> chart.
+  ASLI data par karo, khilone par nahi. Apne hi kharche ya kamai ka CSV,
+  ya UK ka open data. Jo sawaal ka jawab tumhein WAQAI chahiye, usi par.
+
+PHASE 4 — ML, SIRF scikit-learn ...................... 6-8 hafte
+  Deep learning se shuru NAHI. Tartib: regression -> classification ->
+  evaluation.
+  Aur sach ye hai: ML mein mushkil hissa code nahi hai, mushkil hissa ye
+  janna hai ke model WAQAI acha hai ya nahi. Evaluation sab se zyada waqt
+  maangta hai, aur tutorials usay sab se kam dete hain.
+
+PHASE 5 — PHIR FAISLA ................................ abhi nahi
+  Python web (FastAPI) ya gehri ML — ye faisla PHASE 4 KE BAAD hoga.
+  Web aakhir mein isi liye hai ke web pehle se aata hai: usay naye zubaan
+  mein dobara seekhna, list ki har cheez se KAM sikhayega. Baad mein tez
+  pakad lega, bilkul isi liye ke wo aata hai.
+
+--------------------------------------------------------------------------------
+4. CHHOTE PROJECTS — tartib se, har ek kuch shaamon ka
+--------------------------------------------------------------------------------
+  P1. CSV cleaner — gandi CSV lo, saaf karo, nayi CSV likho.
+  P2. ProductStatus + Sku ka Python roop, pytest ke sath. (Phase 1 ka ikhtitam)
+  P3. CLI tool — argparse se, ek asli kaam karne wala.
+  P4. Apni kamai/kharche ka mahana summary — pandas se, asli numbers par.
+  P5. Ek asli dataset par teen sawaalon ka jawab — chart ke sath.
+  P6. Pehla ML model — chhota dataset, aur IMANDARI SE likho ke wo kitna
+      bura hai. Pehla model bura hota hai; usay bura kehna hi seekhna hai.
+
+--------------------------------------------------------------------------------
+5. JIN CHEEZON SE BACHNA HAI
+--------------------------------------------------------------------------------
+  - 40 ghante ka YouTube course. Dekhne se logic nahi aati.
+  - "Python basics" dobara shuru se. Programming aati hai; sirf tarjuma karna hai.
+  - Ek sath web + ML + data science. Yehi masla Laravel mein tha, use naye
+    zubaan mein na le jao.
+  - Bara project abhi design karna. CHHOTE projects batayenge ke bara
+    project kya hona chahiye.
+  - Deep learning / neural network pehle. scikit-learn pehle.
+  - AI se poori file likhwana. Chhe mahine baad wohi deewar, naya syntax.
+
+--------------------------------------------------------------------------------
+6. 2 GHANTE KI SHAAM KAISE BAANTNI HAI
+--------------------------------------------------------------------------------
+  30 minute   Phase 2 — logic ki mashq, akele, bina AI
+  60-90 minute Phase 1/3/4 — us waqt ka phase
+
+  BURE DIN KA PLAN: 20 MINUTE. Taxi ke baad kuch din thakan zyada hogi.
+  20 minute rozana, haftay mein ek dafa ke 2 ghante se ZYADA kaam karta hai.
+  Jo cheez roz hoti hai wo banti hai; jo haftay mein ek dafa hoti hai wo
+  bhool jati hai.
+
+--------------------------------------------------------------------------------
+7. STATUS
+--------------------------------------------------------------------------------
+  2026-11-10  File banai. Kuch shuru nahi hua.
+              Zimal green par pause. Agla qadam: Phase 0 — setup.

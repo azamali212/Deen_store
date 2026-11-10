@@ -1,8 +1,11 @@
 ================================================================================
 CATALOG MODULE — BLUEPRINT
 ================================================================================
-Status : NOTHING BUILT. Design complete, code not started.
-Updated: 2026-10-18
+Status : PAUSED 2026-11-10. C1 half built, FULL SUITE GREEN at the pause.
+         The owner has moved to Python as a single focus. This file is not
+         dead paper: it is the architecture reference for that rebuild.
+         READ SECTION 17 FIRST when you open this again.
+Updated: 2026-11-10
 Code   : app/Domain/Catalog/ — see section 6 for the file tree.
 Design : Catalog Map       https://claude.ai/artifact/NaS5CZbVNwDXuFFNfR93fH
          Prototype (v2)    https://claude.ai/artifact/Tfnr5M372LqvRocxd8Txif
@@ -707,6 +710,15 @@ written down, it will be paid for twice.
               before C8.
               Next: C1's VALUE OBJECTS — Money, Sku, Slug, CategoryPath.
 
+  2026-11-02  Sku.php DONE, plus SkuTest.php. Full `php artisan test` green
+              (owner ran it 2026-11-10). The four validation checks in Sku
+              were written by the owner.
+              Still empty: Money.php, Slug.php, CategoryPath.php.
+
+  2026-11-10  PROJECT PAUSED. See section 17 for the exact state, what
+              transfers to a Python rebuild and what does not.
+              Green at the pause. Nothing left half-written.
+
   This section is updated ONLY when the FULL `php artisan test` is green
   (L1). Seller's section 19 is the precedent: the first line in that file
   backed by a complete run, and the standard every phase after it was held
@@ -721,3 +733,97 @@ written down, it will be paid for twice.
   - Recommendations (trained on Catalog's event tables, later)
   - S3 media storage (swap LocalMediaStorage via the interface)
   - Cart, Orders, Payments, Payouts, Shipping rates — other domains
+
+--------------------------------------------------------------------------------
+17. PAUSED — AND HOW TO USE THIS FILE FROM PYTHON
+--------------------------------------------------------------------------------
+PAUSED 2026-11-10. Not abandoned, and not broken: the full `php artisan test`
+was green at the moment of the pause (the owner ran it). Whoever opens this
+walks into a working project, not a mystery.
+
+WHY: the owner moved to Python as a SINGLE focus — language, then pandas and
+data analysis, then ML — on the grounds that two tracks could not both get
+real evening time. The intent is to reopen this file (not necessarily this
+CODE) once that is solid, and build the structure in Python from these
+decisions.
+
+EXACT STATE AT THE PAUSE
+  DONE, green, with unit tests:
+    app/Domain/Catalog/Enums/      ProductStatus FulfilmentType
+                                   AttributeInputType MediaType
+                                   PendingChangeField PendingChangeStatus
+                                   ImportStatus ViewSource
+    app/Domain/Catalog/ValueObjects/Sku.php
+    tests/Unit/Catalog/Enums/      one test file per enum
+    tests/Unit/Catalog/ValueObjects/SkuTest.php
+  EMPTY PLACEHOLDER FILES, nothing references them, safe to delete:
+    ValueObjects/Money.php  ValueObjects/Slug.php  ValueObjects/CategoryPath.php
+  NOT STARTED: everything from C2 onward. No Catalog migration exists. No
+    config/catalog.php.
+  NEXT STEP HAD THIS FILE CONTINUED: Money (BLUEPRINT L5 — currency code plus
+    an INTEGER in minor units), then Slug, then CategoryPath, then C2.
+
+WHAT IN THIS FILE TRANSFERS TO PYTHON UNCHANGED
+  Almost all of it, because almost none of it is about PHP.
+    Section 1  D-CAT-1..8      product decisions. Every one transfers.
+    Section 2  R-1..R-4        schema decisions. Transfer.
+    Section 3  the two gates   transfers; this is the hardest-won part of the
+                               whole design and it is language-free.
+    Section 4  24 tables       transfers. Only the ORM changes.
+    Section 5  keys, uniques,  transfers, INCLUDING the reasoning for why
+               polymorphism    product_media and translations are NOT
+                               polymorphic. That argument is about databases,
+                               not about Laravel.
+    Section 7  C1..C18 order   transfers exactly. Inside-out is inside-out in
+                               any language.
+    Section 8  seed data       transfers as data. 8 countries, 3 currencies,
+                               19 tax rows.
+    Section 10 AI at WRITE     transfers, and matters more in a Python stack
+               time only       where calling a model inline is even easier.
+    Section 12 test strategy   transfers.
+    Section 14 O-1..O-8        still open. O-8 still has to be decided before
+                               the equivalent of C8.
+
+WHAT DOES NOT TRANSFER — these are Laravel/PHP facts, not design
+    L4  SQLite enum()->default()      Laravel/SQLite only
+    L6  CarbonImmutable namespace     PHP only
+    L7  PHPUnit TestCase::run() final PHPUnit only
+    L8  Http::preventStrayRequests    Laravel only
+    L10 Spatie getAllPermissions      Spatie only
+    L12 half-written file staging     tooling only
+  Three DO transfer, and should be carried over on day one:
+    L1  a phase is not done until the FULL test run is green, never a filter
+    L2  the test ships in the same sitting as the code
+    L5  money is a currency code plus an INTEGER in minor units, never a
+        float. Python's floats are exactly as dangerous as PHP's.
+    L3  transfers only if the database stays MySQL — it is a MySQL index-name
+        limit, not a framework one.
+
+THE PYTHON EQUIVALENTS, so the structure can be read straight across
+    PHP backed enum            -> enum.StrEnum (Python 3.11+). The pattern in
+                                  ProductStatus.php maps one to one: a
+                                  values() classmethod, allowed_transitions(),
+                                  can_transition_to(). The empty-list terminal
+                                  state in PendingChangeStatus works the same.
+    final readonly class       -> @dataclass(frozen=True). This is the direct
+    (Sku.php)                     equivalent, including "cannot be changed
+                                  after construction".
+    constructor validation     -> __post_init__ on the dataclass, or Pydantic
+                                  when the value comes off a request.
+    ValueError/InvalidArgument -> ValueError
+    match ($this) { ... }      -> match/case, or a plain dict lookup
+    Eloquent                   -> SQLAlchemy or Django ORM. Section 5's
+                                  cascade-vs-restrict choices apply as written.
+    PHPUnit + DataProvider     -> pytest + @pytest.mark.parametrize
+    enforceMorphMap            -> there is no framework equivalent; the RULE
+                                  still holds — store a short alias string in
+                                  the _type column, never a class path.
+
+ONE HABIT THAT IS WORTH MORE THAN THIS WHOLE FILE
+  The owner's blocker was never the language. It was writing code alone,
+  without help, and finding out why it was wrong. On 2026-11-02 they wrote
+  Sku's four validation checks themselves; the second one was wrong
+  (comparing the string instead of strlen), and when they saw WHY, they fixed
+  it themselves. That is the skill. It took one evening. If the Python
+  rebuild starts with generated code, the same wall returns with new syntax.
+  Write it first, get it wrong, find out why. Everything else here is detail.
