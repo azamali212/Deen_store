@@ -1,0 +1,723 @@
+================================================================================
+CATALOG MODULE — BLUEPRINT
+================================================================================
+Status : NOTHING BUILT. Design complete, code not started.
+Updated: 2026-10-18
+Code   : app/Domain/Catalog/ — see section 6 for the file tree.
+Design : Catalog Map       https://claude.ai/artifact/NaS5CZbVNwDXuFFNfR93fH
+         Prototype (v2)    https://claude.ai/artifact/Tfnr5M372LqvRocxd8Txif
+         Schema (v4)       https://claude.ai/artifact/RkKmhLsBzUwrQw3JSTAXiy
+         The schema page carries EVERY COLUMN of all 24 tables. This file
+         carries the decisions, the build order, and the corrections.
+Rule   : decide first, write it here, THEN code. Every correction that cost a
+         debugging round is written down as CC<n> so it is never repeated.
+         (Seller used C<n>. Catalog uses CC<n> so the two never get confused
+         in conversation.)
+
+--------------------------------------------------------------------------------
+CARRIED FORWARD FROM SELLER — read this before writing one line
+--------------------------------------------------------------------------------
+These cost real debugging rounds in the Seller domain. Not one of them is
+obvious, and every one of them will happen again here if it is forgotten.
+
+  L1. A PHASE IS NOT DONE UNTIL THE FULL `php artisan test` IS GREEN.
+      Never --filter. Seller's A1, A3 and A5 each shipped on a filter run and
+      each one was hiding a failure for days. (Seller C69.) --filter is a tool
+      for writing, never proof of done.
+
+  L2. THE TEST GOES IN THE SAME ANSWER AS THE CODE IT TESTS. Not at the end
+      of the phase. The three failures above all came from "code now, test
+      later".
+
+  L3. MySQL caps index names at 64 characters, and Laravel's generated name
+      exceeds it on long table names. Catalog has four danger tables:
+      variant_attribute_values, attribute_value_translations,
+      product_media_translations, product_attribute_values. NAME EVERY INDEX
+      AND UNIQUE EXPLICITLY on those, e.g.
+        $table->unique(['product_variant_id','attribute_id'], 'vav_variant_attr_uq');
+
+  L4. Tests run on SQLite :memory:. Do NOT trust enum()->default() there, and
+      do not use MySQL-only SQL (FIELD(), etc.) in any query a test touches.
+      Use string columns + a PHP enum cast instead of a DB enum where the
+      default matters.
+
+  L5. Money is ALWAYS a currency code plus an INTEGER in minor units.
+      2,499.00 PKR is stored as 249900. Never a float, in any column, ever.
+
+  L6. `Illuminate\Support\CarbonImmutable` DOES NOT EXIST in this framework
+      version. House style: `Carbon\CarbonInterface` for type hints,
+      `Carbon\CarbonImmutable` for now().
+
+  L7. `PHPUnit\Framework\TestCase::run()` is FINAL. A private test helper
+      named run() makes the whole class a fatal error. Name helpers
+      runSweep(), runImport(), etc.
+
+  L8. `Http::preventStrayRequests()` is on in tests/TestCase.php. Any HTTP
+      call that is not faked FAILS LOUDLY. That is deliberate — it is how an
+      accidental live AI call gets caught. Fake every AI call in tests.
+
+  L9. phpunit.xml pins memory_limit to 512M and sets
+      GEMINI_API_KEY=phpunit-fake-key plus
+      SELLER_AI_VERIFICATION_ENABLED=false. Catalog's AI flag must be pinned
+      there the same way the day it exists.
+
+  L10. Spatie: getPermissionNames() returns DIRECT permissions only;
+       getAllPermissions() returns direct + via roles. This app assigns
+       permissions to ROLES, never to users, so always getAllPermissions().
+
+  L11. Permission names are "module.action". In PermissionMap, a bare key
+       like `catalog.products` is a MODULE, not a permission; the real
+       permissions are catalog.products.view / .create / .update / .delete.
+       Asserting the bare key in a test can only ever fail. (Seller C69.)
+
+  L12. A file staged immediately after being written can be captured
+       half-written. sync, wait a moment, then stage. (Seller C55.)
+
+  L13. Do not run git in this repo from a tool. A stray `git status` once
+       left a .git/index.lock the shell could not delete. The owner does
+       their own commits.
+
+  L14. EVERY FILE OPENS WITH A ROMAN-URDU HEADER BLOCK (owner's standing
+       request, 2026-10-26) answering five questions in this order:
+         YE FILE KYA HAI
+         KU BANAI - ISKI ZAROORAT KU PARI
+         KAHAN KAHAN ZAROORAT PAREGI   (name the files and tables)
+         AGAR YE FILE NA HOTI          (what breaks)
+         KIS FILE SE JURI HAI
+       Roman Urdu, NOT Urdu script: RTL text inside LTR code makes the lines
+       render out of order in an editor and unreadable in a git diff (the
+       same problem as O-7). Method-level docblocks stay in English, because
+       they are what another developer reads; a Roman-Urdu line is added
+       above any method whose logic is not obvious.
+       The eight Enums files predate this rule and do not have it.
+
+  L15. FROM C1's VALUE OBJECTS ONWARD, THE OWNER WRITES THE CODE.
+       (owner's decision, 2026-10-26.) The owner can read and plan code but
+       is deliberately training the missing skill, which is turning a
+       requirement into ordered steps and conditions. So an answer gives:
+       the file list with exact paths, and for each method the STEPS IN
+       ROMAN URDU plus the decisions behind them - and NOT the PHP body.
+       The owner writes it, the owner runs the suite, and review happens
+       afterwards against the steps. Handing over finished code defeats the
+       purpose of the exercise, however convenient it is in the moment.
+
+--------------------------------------------------------------------------------
+0. WHAT CATALOG IS, AND WHAT IT IS NOT
+--------------------------------------------------------------------------------
+Catalog answers exactly two questions:
+    what is this thing, and what does it cost?
+
+IT IS:   categories, the attributes a category allows, products, variants,
+         prices per currency, stock, media, translations, the two approval
+         gates, the event tables, and bulk import.
+
+IT IS NOT, and these must never be added here:
+    Cart and Orders ............ own domain
+    Payments and Payouts ....... own domain (the only place that decrypts a
+                                 seller's bank number)
+    Reviews and ratings ........ own domain. Catalog only holds the CACHED
+                                 products.rating_avg / rating_count, filled
+                                 by an event from Reviews. Reviews cannot be
+                                 built before Orders, because a trustworthy
+                                 review needs a delivered order.
+    Shipping rates and zones ... own domain. Catalog holds the variant's
+                                 weight because that is a property of the
+                                 thing; the rate maths lives there.
+    Recommendations ............ later, trained on Catalog's event tables.
+    Seller onboarding .......... DONE. Seller domain, 343 tests green.
+
+--------------------------------------------------------------------------------
+1. DECISIONS
+--------------------------------------------------------------------------------
+  D-CAT-1 (2026-10-02) Variant attribute values come from a PLATFORM LIST PER
+    CATEGORY. Admin curates; sellers pick, never type.
+    WHY: free text is a one-way door. "Red", "red", "RED" and "Laal" become
+    four values, and filters break on the day the data is already dirty — it
+    cannot be cleaned afterwards. Platform-first also leaves the door open:
+    adding a "seller requests a new value -> moderation" path later is purely
+    additive. The reverse is not.
+    REQUIRES D-CAT-7 (the admin screens) to actually function.
+    DEFERRED, not rejected: the seller-request path.
+
+  D-CAT-2 (2026-10-02) Launch locales EN + UR. Fallback is ALWAYS ENGLISH,
+    never the seller's own language — otherwise an Urdu shopper can land on a
+    German description with no way to tell what they are reading.
+    product_translations is a separate table from day one; adding de/fr/es/
+    it/nl later is DATA, never a migration.
+
+  D-CAT-3 (2026-10-04) APPROVAL ON CREATE: nobody approves a normal listing.
+    Four checks, three actors — see section 3.
+    Admin does INVESTIGATIONS, not approvals.
+    WHY: a seller is verified ONCE; a listing is scanned EVERY time. So human
+    effort scales with NEW SELLERS, not with listings, and new sellers arrive
+    far more slowly. 1 lakh sellers / 2.5 lakh listings a month works out to
+    roughly 3 reviewers; reviewing everything needs 13+ and grows for ever.
+    This is the shape Amazon and eBay actually use, checked against their own
+    published material, not guessed.
+
+  D-CAT-4 (2026-10-04) AI FILLS THE LISTING FORM, as a SUGGESTION ONLY.
+    Every AI-filled field is visibly marked as AI-filled and is NOT saved
+    until the seller confirms it.
+    WHY FILL: the number one cause of bad marketplace data is sellers
+    skipping fields. Empty attribute -> empty filter -> shopper cannot find
+    the product -> seller blames the platform.
+    WHY NEVER COMMIT: a wrong colour nobody checked makes the filter actively
+    LIE, which is worse than blank. Blank says "unknown"; wrong says "this is
+    blue" when it is black.
+    Falls out of D-CAT-1 for free: AI can only propose values that exist in
+    the platform list, so it cannot invent "Laal".
+
+  D-CAT-5 (2026-10-04) SELLING LIMITS instead of reviewing new sellers.
+    Two counters on seller_profiles: monthly item count and monthly value,
+    lifted automatically after a clean period. The eBay mechanism, and what
+    removes "review every new listing" from the design entirely.
+    The USED count is NOT stored — a stored counter drifts. Count from
+    products with an index.
+
+  D-CAT-6 (2026-10-10) APPROVAL ON EDIT. This closed a security hole: the
+    first design guarded CREATE only, so a seller could list a clean product,
+    get it approved, then swap the images the next day and bypass every
+    check legally. Amazon's ML scans product detail page CHANGES for exactly
+    this reason. Field rules in section 3.
+    THE KEY RULE: while a pending change is being checked, the OLD version
+    stays LIVE. That is what makes re-moderation safe — the seller's product
+    never goes dark, only the change waits.
+    Schema consequence: a product needs a PENDING set beside its LIVE set.
+    Same pattern as Seller Phase 9b's pending_store_name.
+
+  D-CAT-7 (2026-10-10) ADMIN NEEDS CATEGORY + ATTRIBUTE MANAGEMENT SCREENS.
+    Without them D-CAT-1 cannot function at all: if admin curates the values,
+    admin needs somewhere to curate them. Includes MERGE on attribute values
+    — mistakes happen, and the whole payoff of a curated list is that two
+    values meaning the same thing can be joined. Free text offers no such
+    option. This is also where a category is marked REGULATED.
+
+  D-CAT-8 (2026-10-10) BULK UPLOAD (CSV) AND A SELLER API ARE REQUIRED.
+    A seller with 5,000 SKUs will not fill a 4-step wizard 5,000 times.
+    Without this the platform is usable by small sellers and UNUSABLE by
+    large ones. Per-row validation report naming row + column + problem, and
+    a background job.
+
+--------------------------------------------------------------------------------
+2. APPROVED SCHEMA DECISIONS (owner approved 2026-10-18)
+--------------------------------------------------------------------------------
+  R-1 CURRENCY: variant_prices, one row per currency. NOT a base price plus
+      conversion.
+      WHY: a converted price looks wrong. PKR 2,499 converts to GBP 6.37 and
+      no UK seller prices at 6.37 — they price at 6.49 or 5.99. Price is a
+      marketing decision, not arithmetic. compare_at also differs per market,
+      and the EU regulates which previous price may be shown.
+      The bulk objection is handled by `is_auto`: a currency the seller did
+      not set is converted at listing time and written as a REAL row flagged
+      is_auto = true. Editing it by hand clears the flag. Readers always get
+      a plain row; conversion NEVER happens on page load.
+      is_auto is also THE BOUNDARY of the nightly refresh job: that job
+      recalculates is_auto = true rows and must never touch a hand-typed one.
+
+  R-2 TAX: categories.tax_class_id is the source; products.tax_class_id is a
+      nullable OVERRIDE. tax_rates is DATE-BOUNDED (starts_on / ends_on)
+      because rates change and an old order needs the rate that applied then.
+      NO MATCHING RATE ROW -> fall back to that country's standard rate AND
+      LOG A WARNING. Blocking the sale punishes the buyer for our config gap,
+      and under-charging is the platform's liability; standard errs in the
+      safe direction and the log surfaces the gap.
+
+  R-3 locations: do NOT build the table yet. variant_stock.location_id stays
+      nullable with unique(variant_id, location_id) already in place, so
+      multi-warehouse needs no migration later. Building it now means a model
+      and a relation that do nothing.
+
+  R-4 profile_moderation_flags -> rename + polymorphic. Section 11.
+
+--------------------------------------------------------------------------------
+3. THE TWO GATES
+--------------------------------------------------------------------------------
+CREATE (D-CAT-3) — four checks, and only the uncertain middle reaches a human.
+
+  1. Seller verified?      AI + Admin, ONCE, at onboarding. THE REAL GATE,
+                           and already built — the whole Seller domain.
+                           Fail -> never reaches the listing screen.
+  2. Within monthly limit? System. A counter (D-CAT-5).
+                           Fail -> held until the limit lifts.
+  3. AI scan of this       System/AI at WRITE time.
+     listing               Obvious junk -> blocked with a reason, no human.
+                           Uncertain -> Admin investigation queue.
+  4. Category regulated?   System routes, Admin decides. Yes -> Admin, even
+                           at 100% AI confidence.
+
+  All pass -> LIVE IMMEDIATELY. There is no approval step.
+  After publish -> buyer reports + a random sample of auto-approved listings
+  go to Admin. Approval is not the last door.
+
+EDIT (D-CAT-6) — the field decides what happens.
+
+  price, stock            live immediately, no check. Blocking this kills the
+                          seller's daily work.
+  images                  becomes PENDING; AI + moderation re-run.
+  title, description      becomes PENDING; AI + moderation re-run.
+  variant add / remove    immediate, BUT a variant with an order against it
+                          is ARCHIVED, never deleted.
+  category change         product goes back to DRAFT — attributes changed, so
+                          variants must be rebuilt.
+  brand_name              ALWAYS Admin. This field is the door counterfeits
+                          come through.
+
+  While a pending change waits, the OLD version stays LIVE.
+
+--------------------------------------------------------------------------------
+4. DATABASE — 24 new tables, 3 existing touched
+--------------------------------------------------------------------------------
+EVERY COLUMN of every table is on the schema page (link at the top). This is
+the inventory and the grouping; do not duplicate the column lists here, or
+the two will drift.
+
+  Platform-owned, admin writes (9)
+    categories · category_translations · attributes ·
+    attribute_translations · attribute_values ·
+    attribute_value_translations · category_attribute ·
+    tax_classes · tax_rates
+
+  Seller-owned (11)
+    products · product_translations · product_attribute_values ·
+    product_pending_changes · product_variants ·
+    variant_attribute_values · variant_prices · variant_stock ·
+    product_media · product_media_translations · dropship_sources
+
+  System-written, no human (4)
+    product_views · search_queries · product_imports ·
+    product_import_errors
+
+  Existing
+    audit_logs ................ no change. Already nullableMorphs('actor')
+                                and nullableMorphs('subject'). Verified.
+    seller_profiles ........... FOUR new columns for D-CAT-5. Verified that
+                                none of them exist today.
+    profile_moderation_flags .. rename + polymorphic. Section 11.
+
+THE GROUPING IS NOT COSMETIC. It decides who may write to a table, which
+tables come from a seeder, which are mandatory in a backup, and which (the
+event tables) can be archived away separately later.
+
+--------------------------------------------------------------------------------
+5. KEYS, RELATIONSHIPS, POLYMORPHISM
+--------------------------------------------------------------------------------
+  PK is `id` bigint everywhere. The PUBLIC identifier is products.uuid
+  (ULID) — a sequential id in a URL leaks how many products exist and lets a
+  script walk the whole catalog from 1. Same pattern as users.uuid.
+
+  onDelete is only ever CASCADE or RESTRICT:
+    cascade  translations, pivots, variant_prices, variant_stock,
+             product_media, pending_changes, import_errors — these rows are
+             meaningless without their parent.
+    restrict products.category_id, products.seller_profile_id,
+             product_variants.product_id, dropship_sources.variant_id.
+             Here restrict is a FEATURE: products and variants are NEVER
+             deleted, because an old order needs its item's name, price and
+             image for ever. The database refuses; archived_at is the answer.
+
+  Event tables have NO foreign keys, on purpose: they grow fastest, an FK
+  check per insert makes writes expensive, and they are archived separately.
+
+  FOUR UNIQUES THAT PREVENT REAL BUGS
+    variant_attribute_values  unique(product_variant_id, attribute_id)
+      This is why the pivot stores attribute_id as well as
+      attribute_value_id. Without it a variant could carry Blue AND Red and
+      only application code would stop it. Now the database stops it.
+    product_variants          unique(seller_profile_id, sku)
+      SKU is the SELLER's code, not the platform's. This is why
+      seller_profile_id is DENORMALISED onto variants — the one justified
+      denormalisation here, and it also makes "all of this seller's variants"
+      a query with no join.
+    products                  unique(seller_profile_id, slug)
+      Not a global unique slug, or the second seller to want "blue-tshirt"
+      gets "blue-tshirt-29481".
+    every *_translations      unique(x_id, locale)
+      Or one product grows two Urdu rows and nobody can say which is real.
+
+  POLYMORPHISM — YES in exactly two places, and NOT ONE of Catalog's own 24
+  tables is polymorphic.
+    YES: audit_logs (already) and moderation_flags (after R-4). Both are ONE
+    BEHAVIOUR applied to many unrelated entity types, where the behaviour
+    does not care what it is attached to. An audit log does not know what a
+    product is; it needs "which thing, when, by whom".
+    USE A MORPH MAP, enforced:
+      Relation::enforceMorphMap(['user' => User::class,
+                                 'product' => Product::class, ...]);
+    Without it Laravel writes the full class name into the _type column, and
+    the day a class is renamed or moved, every existing row points at a name
+    that no longer exists — a legitimate refactor corrupts data.
+    enforceMorphMap (not morphMap) because it throws on anything unmapped.
+
+    NO — product_media is not polymorphic. No real FK means no cascade and
+    the database cannot prevent orphans; index quality drops on the hottest
+    read path in the system; and product_media's own product_variant_id is
+    meaningless for any other "mediable" type. A category needing one image
+    gets categories.image_path.
+
+    NO — translations are not one polymorphic table. A single
+    translations(translatable_type, translatable_id, locale, field, value) is
+    the classic trap: a product page needs a dozen rows instead of one,
+    `value` becomes text for everything, per-field indexes are impossible,
+    and it becomes the largest and hottest table in the database.
+
+    NO — attribute values use TWO pivots, not one, because the RULES differ:
+    variant_attribute_values needs unique(variant_id, attribute_id) and
+    product_attribute_values must NOT have it (a product may carry many
+    features). One table cannot enforce both.
+
+--------------------------------------------------------------------------------
+6. FILE TREE — everything this module will contain
+--------------------------------------------------------------------------------
+app/Domain/Catalog/
+  BLUEPRINT.txt                      <- this file
+  Enums/
+    ProductStatus.php                draft|pending|live|rejected|archived
+    FulfilmentType.php               own_stock|dropship
+    AttributeInputType.php           select|multiselect|text|number|boolean
+    MediaType.php                    image|video
+    PendingChangeField.php           name|description|media|brand_name|...
+    PendingChangeStatus.php          pending|applied|rejected
+    ImportStatus.php                 queued|running|done|failed
+    ViewSource.php                   browse|search|direct|recommendation
+  ValueObjects/
+    Money.php                        currency code + integer minor units
+    Sku.php
+    Slug.php
+    CategoryPath.php                 builds and parses "1/7/23"
+  Contracts/
+    ProductEnricherInterface.php     the AI seam (swap or switch off)
+    MediaStorageInterface.php        local now, S3 later
+    SearchIndexInterface.php         named engine decision, see section 14
+    CurrencyRateProviderInterface.php  config now, live feed later
+  DTO/            ...per service
+  Services/
+    CategoryService.php  AttributeService.php  ProductService.php
+    VariantService.php   PricingService.php    StockService.php
+    MediaService.php     TaxService.php
+    ProductModerationService.php    ProductImportService.php
+    PendingChangeService.php
+  Actions/        ...thin, one job each
+  Events/
+    ProductCreated  ProductSubmitted  ProductWentLive  ProductBlocked
+    ProductEdited   PendingChangeRequested  PendingChangeApplied
+    ProductArchived ProductViewed  SearchPerformed
+  Listeners/      audit + search-index + moderation wiring
+  Exceptions/
+  Policies/       ProductPolicy.php  CategoryPolicy.php
+  Repositories/   Queries/ProductQuery.php  CategoryQuery.php
+  Support/
+    GeminiProductEnricher.php  LocalMediaStorage.php
+    ConfigCurrencyRateProvider.php
+
+app/Models/   Category CategoryTranslation Attribute AttributeTranslation
+              AttributeValue AttributeValueTranslation
+              TaxClass TaxRate
+              Product ProductTranslation ProductAttributeValue
+              ProductPendingChange ProductVariant VariantAttributeValue
+              VariantPrice VariantStock ProductMedia
+              ProductMediaTranslation DropshipSource
+              ProductView SearchQuery ProductImport ProductImportError
+
+config/catalog.php          section 9
+routes/catalog/admin.php    category + attribute management (D-CAT-7)
+routes/catalog/seller.php   product CRUD, variants, media, import
+routes/catalog/public.php   browse, search, product page
+postman/Catalog_*.postman_collection.json
+
+--------------------------------------------------------------------------------
+7. BUILD ORDER — one or two files per answer, inside out
+--------------------------------------------------------------------------------
+THE ORDER MATTERS MORE THAN THE COUNT. Every file must stand only on things
+already written. A controller handed over before its service forces forward
+references to code that does not exist, and that is exactly what is hard to
+follow.
+
+Each phase ends with a checkpoint the OWNER runs:
+    php artisan migrate && php artisan test      <- the FULL suite (L1)
+
+  C1  Enums + value objects. No database at all. Unit tests only.
+  C2  categories + category_translations: migration, models, factory,
+      service, seeder, feature test.
+  C3  attributes + attribute_values + both translation tables +
+      category_attribute pivot. This is D-CAT-1's machinery.
+  C4  tax_classes + tax_rates + the 19-row seeder (section 8).
+  C5  products + product_translations. Status lifecycle, uuid, slug rules.
+  C6  product_variants + variant_attribute_values + variant_prices +
+      variant_stock. The unique in L3/section 5 goes in here.
+  C7  product_media + product_media_translations.
+  C8  product_pending_changes — the edit gate (D-CAT-6).
+  C9  R-4: rename profile_moderation_flags, add morphs, backfill, morph map.
+  C10 seller_profiles: the four D-CAT-5 columns + the limit check.
+  C11 ProductEnricherInterface + GeminiProductEnricher. AI at WRITE time.
+  C12 product_views + search_queries. Append-only, no FKs.
+  C13 product_imports + product_import_errors + the CSV job (D-CAT-8).
+  C14 dropship_sources.
+  C15 Admin endpoints: category tree, attributes, values, merge (D-CAT-7).
+  C16 Seller endpoints: product CRUD, variants, media, submit, import.
+  C17 Public endpoints: browse, filter, search, product page.
+  C18 SearchIndexInterface + the chosen engine (section 14).
+
+Each answer: one or two files, then what they do — which function, which
+array or collection method, why that one, and how the file links to the ones
+already written. Trivial siblings (a 10-line event class) may be grouped so
+the effort lands where a real decision is. Expect 40-60 files, so 30+
+exchanges. That is accepted; the goal is learning, not speed.
+
+FROM C1's VALUE OBJECTS ONWARD THE SHAPE OF AN ANSWER CHANGES (L15): the
+answer carries the file list and the steps, and the owner writes the code.
+Everything above about ORDER is unchanged — it is only who types the body
+that moves.
+
+--------------------------------------------------------------------------------
+8. SEED DATA
+--------------------------------------------------------------------------------
+NOT COMPLIANCE. Rates were looked up, not guessed, but they are a starting
+point. Check with an accountant before launch, and in production prefer a tax
+service over our own table.
+
+  COUNTRY  CURRENCY  LOCALE  STANDARD
+  PK       PKR       ur      18%
+  GB       GBP       en      20%
+  IE       EUR       en      23%
+  DE       EUR       en      19%
+  FR       EUR       en      20%
+  ES       EUR       en      21%
+  IT       EUR       en      22%
+  NL       EUR       en      21%
+
+  8 countries, 3 currencies.
+
+  THE DESIGN POINT THIS PROVES: currency and tax are NOT the same axis. Six
+  countries share EUR and their rates run 19% to 23%. Germany and France are
+  both EUR and differ. That is why variant_prices keys on CURRENCY_CODE and
+  tax_rates keys on COUNTRY_CODE.
+
+  class      PK   GB   IE     DE   FR    ES   IT   NL
+  standard   18   20   23     19   20    21   22   21
+  reduced    —    5    13.5   7    5.5   10   10   9
+  zero       0    0    0      —    —     —    —    —
+  exempt     0    —    —      —    —     —    —    —
+  => 19 rate rows.
+
+  zero AND exempt are SEPARATE classes. Both charge 0% but they are not the
+  same legally: zero-rated is INSIDE the system at 0% (reported, input tax
+  reclaimable); exempt is OUTSIDE it. They print differently on an invoice,
+  and one class loses that distinction for ever.
+  PK's reduced row is empty and that is REAL — the FBR has no general reduced
+  rate on goods; its reduced rates are for IT services.
+
+  CURRENCY, config not migration. 1 unit = PKR: PKR 1, GBP 380 (DUMMY),
+  EUR 325 (DUMMY). Production needs a daily feed.
+  ROUNDING IS REQUIRED: 2,499 / 380 = GBP 6.58, and no shop prices at 6.58.
+  Round up to .99 -> 6.99. This is what makes an auto price read as "someone
+  set this" instead of "a machine divided something".
+
+  Sources
+    EU/UK: https://www.taxually.com/blog/eu-vat-rates-and-thresholds-2026
+    PK:    https://trykintsugi.com/sales-tax-guides/apac/pakistan
+
+--------------------------------------------------------------------------------
+9. CONFIG — config/catalog.php
+--------------------------------------------------------------------------------
+These are POLICY, not code. Changing one must be a config line, never a
+migration. Values below are the prototype's placeholders.
+
+  new_seller.monthly_item_limit        10              O-1
+  new_seller.monthly_value_limit_minor 15000000 (PKR)  O-1
+  limits.lift_after_days               90              O-2
+  moderation.random_sample_rate        0.01            O-3
+  currency.rates                       the dummy table above
+  currency.rounding                    per currency, "up_to_99"
+  ai.enabled                           false until paid billing (L9)
+  import.partial_success               undecided       O-4
+
+--------------------------------------------------------------------------------
+10. AI — where it runs, and what it may never do
+--------------------------------------------------------------------------------
+  AI RUNS AT WRITE TIME, NEVER READ TIME. A shopper's page load must never
+  wait on a model. Everything AI produces is written into columns.
+
+  AT WRITE TIME IT MAY:
+    suggest a category, suggest attribute values (only from the platform
+    list), draft the other locale's description, write alt text, produce an
+    embedding for search, and score a listing's risk.
+
+  IT MAY NEVER:
+    save a field the seller has not confirmed (D-CAT-4), be the accountable
+    final approver (D-CAT-3), or invent an attribute value that is not in
+    attribute_values.
+
+  Behind ProductEnricherInterface, so the provider can be swapped or switched
+  off. Pin the flag OFF in phpunit.xml (L9) and fake every call (L8).
+
+--------------------------------------------------------------------------------
+11. MODERATION — reuse, do not rebuild
+--------------------------------------------------------------------------------
+The Moderation domain already exists and already does exactly what Catalog
+needs. Read app/Domain/Moderation before writing anything here.
+
+  HOW IT WORKS TODAY. AI checks user content and there are THREE outcomes,
+  not two:
+    clean            -> saved, no row
+    clearly bad      -> EnforceContentModerationAction throws BEFORE anything
+                        is saved (an avatar is checked on raw bytes, so a
+                        rejected image never touches disk) and a row is
+                        written with status = rejected
+    uncertain        -> saved, and a row with status = pending goes to the
+                        admin queue
+  So the table is the QUEUE FOR UNCERTAINTY plus the permanent record of what
+  was blocked. That is the same "AI sorts, human decides the middle" shape as
+  D-CAT-3 — built months earlier.
+
+  THE TABLE IS CALLED profile_moderation_flags. Not moderation_flags; this
+  blueprint's earlier drafts had that wrong. The MODEL is already called
+  ModerationFlag, so only the table and the FK need generalising.
+  Columns: user_id, status, severity, flagged_fields (json), ai_summary,
+  snapshot (json), reviewed_by, reviewed_at, review_notes.
+  indexes (status, created_at) and (user_id, status) — the second feeds the
+  trust tier.
+
+  TWO COLUMNS WORTH UNDERSTANDING BEFORE REUSING THEM
+    snapshot    the values AT THE TIME of the check. The user can edit their
+                bio again before the admin reviews it; without the snapshot
+                the admin opens the flag and sees clean text with no idea
+                what was flagged. On a product it will hold the title and
+                description.
+    status=rejected with reviewed_by NULL means "AI rejected at the door";
+                with reviewed_by set it means "an admin reviewed a pending
+                flag and rejected it". One column, no extra schema, and the
+                admin list shows both.
+
+  R-4, FOUR STEPS, ALL ADDITIVE — the existing Moderation tests must keep
+  passing:
+    1. rename profile_moderation_flags -> moderation_flags
+    2. add nullableMorphs('flaggable')
+    3. backfill: flaggable_type = 'user', flaggable_id = user_id
+       (the morph map ALIAS, never the full class name)
+    4. index (flaggable_type, flaggable_id, status)
+  KEEP user_id. It looks redundant and is not: on a product flag it still
+  says which seller the content belongs to, and the trust tier needs exactly
+  that without a join.
+
+  flagged_fields and snapshot are generic JSON shapes and work unchanged for
+  products. That is the strongest argument against a separate
+  product_moderation_flags table: it would be the same thing under a new name,
+  and a third copy again when Reviews arrives.
+
+--------------------------------------------------------------------------------
+12. TESTS
+--------------------------------------------------------------------------------
+Per L1 and L2: the test ships with the code, and the FULL suite is the proof.
+
+  Unit        Money, Sku, Slug, CategoryPath. Rounding rules. mod-97-style
+              edge cases for anything with arithmetic.
+  Feature, per table phase
+              create / read / update, the unique constraints actually
+              rejecting, cascade vs restrict actually behaving.
+  The gates   CREATE: all four checks, each failing in turn.
+              EDIT: every field class in section 3, and the proof that the
+              OLD version stays live while a change is pending.
+  D-CAT-1     a seller cannot submit a value outside the platform list, via
+              the form AND via CSV import.
+  D-CAT-4     an AI-suggested field is NOT saved until confirmed.
+  Tax         the fallback-to-standard path, and that it logs.
+  Currency    is_auto rows refresh; hand-typed rows do NOT.
+  Events      a view and a search each append exactly one row.
+  Import      partial success, and the per-row error report.
+  Moderation  all three outcomes; a rejected image never reaching disk.
+
+--------------------------------------------------------------------------------
+13. CORRECTIONS (CC<n>)
+--------------------------------------------------------------------------------
+Empty on purpose. Every correction that costs a debugging round gets written
+here with its reason, the way Seller's C1-C69 were. If a bug is fixed and not
+written down, it will be paid for twice.
+
+  (none yet — no code has been written)
+
+--------------------------------------------------------------------------------
+14. OPEN QUESTIONS
+--------------------------------------------------------------------------------
+  O-1  New seller limit. Placeholder 10 items / PKR 150,000 per month (near
+       eBay's $500). Right number for Pakistan not confirmed.
+  O-2  When the limit lifts, and to what. Placeholder 90 days + clean record.
+       Double it, or tiers?
+  O-3  Random sample rate on auto-approved listings. Placeholder 1%. This is
+       the dial that keeps probing the AI expensive: too low and sellers
+       start testing what gets through, too high and admin workload climbs.
+  O-4  Bulk import partial success. 4,812 good rows and 188 bad — import the
+       good ones or hold the whole file? Both buttons exist in the prototype;
+       the DEFAULT must be chosen.
+  O-5  SEARCH ENGINE — must be a NAMED decision before C18, not "we'll see".
+       SQL LIKE does not search millions of products, and the per-chip facet
+       counts the shopper screen shows are not cheap in SQL on every page
+       load. Meilisearch, OpenSearch or Elasticsearch. Catalog has to FEED
+       it, and that feeding happens at write time, beside AI enrichment.
+  O-6  Image pipeline. product_media.path hides a subsystem: upload, resize
+       to several sizes, WebP, CDN. Serving a 2 MB original undoes every
+       other performance decision.
+  O-7  Urdu is RTL, and sellers will list from phones. The prototype's
+       screens are left-to-right and desktop-shaped. Both are layout
+       decisions and both are cheaper to settle before the frontend, or they
+       become a redesign rather than an adjustment.
+
+  O-8  PendingChangeField's SCOPE. As written (C1) the enum carries every
+       editable field — price, stock, variants and category included — and
+       three methods decide what each one does. The alternative is an enum
+       of only the four fields that can be pending, plus a second
+       EditableField enum for the rest.
+       The case for what is written: the edit gate's real job is to sort an
+       incoming field into one of four behaviours, and an enum holding only
+       the pending four forces a SECOND, hand-typed list of the immediate
+       ones — the stale-list problem values() exists to prevent, except
+       here that list is a security boundary, and a field missing from it
+       silently takes whichever default was chosen.
+       The case against: the name then describes only half its contents.
+       MUST BE NAMED BEFORE C8. Becomes D-CAT-9 once decided.
+
+  KNOWN GAP (D6, carried from Seller A5): nothing stops a user with a PENDING
+  ACCOUNT ERASURE from applying to sell. Not a hole — the nightly erasure
+  sweep re-checks and cancels with an explanation — but the right place to
+  refuse it is the seller application itself.
+
+--------------------------------------------------------------------------------
+15. STATUS
+--------------------------------------------------------------------------------
+  2026-10-18  Design complete. NOTHING BUILT.
+              Catalog Map, Prototype (v2) and Schema (v4) all published.
+              D-CAT-1..8 decided. R-1, R-2, R-4 approved; R-3 is "do not
+              build yet". Seed data fixed at 8 countries / 3 currencies /
+              19 tax rows.
+              Repo verified EMPTY of Catalog: no product, category,
+              attribute or variant migration exists.
+              config/catalog.php does not exist yet.
+              Next: C1 — enums and value objects.
+
+  2026-10-26  C1, ENUMS HALF DONE. Full `php artisan test` green (owner ran
+              it). 8 enum files + 8 unit test files, all under
+              app/Domain/Catalog/Enums/ and tests/Unit/Catalog/Enums/:
+                ProductStatus  FulfilmentType  AttributeInputType  MediaType
+                PendingChangeField  PendingChangeStatus  ImportStatus
+                ViewSource
+              No database touched, so no migration and no feature test yet.
+              Section 6's enum list is now complete.
+              New rules recorded this round: L14 (Roman-Urdu file headers),
+              L15 (the owner writes the code from here on).
+              New open question: O-8, PendingChangeField's scope — needed
+              before C8.
+              Next: C1's VALUE OBJECTS — Money, Sku, Slug, CategoryPath.
+
+  This section is updated ONLY when the FULL `php artisan test` is green
+  (L1). Seller's section 19 is the precedent: the first line in that file
+  backed by a complete run, and the standard every phase after it was held
+  to.
+
+--------------------------------------------------------------------------------
+16. OUT OF SCOPE (later, or elsewhere)
+--------------------------------------------------------------------------------
+  - Seller-requested attribute values (D-CAT-1's deferred half)
+  - locations / multi-warehouse (R-3 — the column is already there)
+  - Reviews and ratings (own domain; Catalog only caches the two columns)
+  - Recommendations (trained on Catalog's event tables, later)
+  - S3 media storage (swap LocalMediaStorage via the interface)
+  - Cart, Orders, Payments, Payouts, Shipping rates — other domains
